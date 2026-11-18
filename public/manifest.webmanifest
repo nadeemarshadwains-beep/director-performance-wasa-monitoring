@@ -1,0 +1,17 @@
+{
+  "name": "Director Performance & WASA Monitoring",
+  "short_name": "WASA Monitor",
+  "description": "Secure performance and monthly reporting for WASAs",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#102a43",
+  "icons": [
+    {
+      "src": "/water-drop.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
