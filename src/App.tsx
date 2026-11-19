@@ -26,6 +26,134 @@ const OverviewCharts = lazy(() => import("./OverviewCharts"));
 
 const emptyData: AppData = { directors: [], wasas: [], assignments: [], reports: [], visits: [], targets: [] };
 const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const punjabWasaNames = [
+  "Lahore WASA", "Faisalabad WASA", "Rawalpindi WASA", "Multan WASA", "Gujranwala WASA",
+  "Sialkot WASA", "Bahawalpur WASA", "Sargodha WASA", "Sheikhupura WASA", "Rahim Yar Khan WASA",
+  "Jhang WASA", "Dera Ghazi Khan WASA", "Gujrat WASA", "Sahiwal WASA", "Okara WASA",
+  "Kasur WASA", "Pakpattan WASA", "Vehari WASA", "Khanewal WASA", "Muzaffargarh WASA",
+  "Rajanpur WASA", "Bahawalnagar WASA", "Layyah WASA", "Bhakkar WASA", "Mianwali WASA",
+  "Jhelum WASA", "Chakwal WASA", "Attock WASA", "Nankana Sahib WASA", "Hafizabad WASA",
+  "Narowal WASA", "Chiniot WASA", "Toba Tek Singh WASA", "Mandi Bahauddin WASA",
+  "Khushab WASA", "Lodhran WASA", "Taunsa WASA", "Murree WASA", "Talagang WASA",
+  "Wazirabad WASA", "Kot Addu WASA",
+];
+
+const demoDirectors: Director[] = Array.from({ length: 7 }, (_, index) => ({
+  id: `director-${index + 1}`,
+  full_name: `Director ${index + 1}`,
+  email: `director${index + 1}@punjab.gov.pk`,
+  auth_user_id: null,
+  is_active: true,
+}));
+
+const demoWasas: Wasa[] = punjabWasaNames.map((name, index) => ({
+  id: `wasa-${index + 1}`,
+  name,
+  code: `PUN-${String(index + 1).padStart(2, "0")}`,
+  is_active: true,
+}));
+
+const demoAssignments: Assignment[] = demoWasas.map((wasa, index) => ({
+  id: `assignment-${index + 1}`,
+  director_id: `director-${Math.floor(index / 6) + 1}`,
+  wasa_id: wasa.id,
+  valid_from: "2026-01-01",
+  valid_to: null,
+}));
+
+const demoReports: MonthlyReport[] = demoWasas.map((wasa, index) => {
+  const directorIndex = Math.floor(index / 6);
+  const demand = 9_500_000 + ((index * 137_000) % 8_000_000);
+  const recoveryRate = 74 + ((index * 3) % 19);
+  const collection = Math.round(demand * recoveryRate / 100);
+  const openingArrears = 20_000_000 + ((index * 1_250_000) % 18_000_000);
+  const additionalArrears = 800_000 + ((index * 91_000) % 1_400_000);
+  const arrearsRecovered = 1_100_000 + ((index * 73_000) % 2_200_000);
+  const adjustments = 100_000 + ((index * 29_000) % 400_000);
+  const closingArrears = openingArrears + additionalArrears - arrearsRecovered - adjustments;
+  const openingSurveys = 5_000 + index * 137;
+  const newSurveys = 55 + ((index * 7) % 115);
+  const removedSurveys = 8 + (index % 19);
+  const openingWater = 35_000 + index * 920;
+  const newWater = 45 + ((index * 5) % 85);
+  const removedWater = 3 + (index % 9);
+  const openingSewer = 18_000 + index * 510;
+  const newSewer = 20 + ((index * 3) % 55);
+  const removedSewer = 2 + (index % 6);
+  const status: MonthlyReport["status"] = index % 9 === 0 ? "submitted" : index % 17 === 0 ? "returned" : "approved";
+  return {
+    id: `report-${index + 1}`,
+    wasa_id: wasa.id,
+    director_id: `director-${directorIndex + 1}`,
+    report_year: 2026,
+    report_month: 11,
+    status,
+    submitted_by: status === "draft" ? null : "demo",
+    submitted_at: status === "draft" ? null : `2026-11-${String(5 + (index % 13)).padStart(2, "0")}T10:00:00Z`,
+    reviewed_by: status === "approved" ? "demo" : null,
+    reviewed_at: status === "approved" ? "2026-11-12T10:00:00Z" : null,
+    review_comment: status === "returned" ? "Please reconcile the arrears balance and resubmit." : null,
+    monthly_demand: demand,
+    monthly_collection: collection,
+    outstanding_current_demand: demand - collection,
+    recovery_percentage: recoveryRate,
+    opening_arrears: openingArrears,
+    additional_arrears: additionalArrears,
+    arrears_recovered: arrearsRecovered,
+    approved_adjustments: adjustments,
+    closing_arrears: closingArrears,
+    opening_surveys: openingSurveys,
+    new_surveys: newSurveys,
+    corrected_surveys: 30 + (index % 70),
+    removed_surveys: removedSurveys,
+    closing_surveys: openingSurveys + newSurveys - removedSurveys,
+    opening_water_connections: openingWater,
+    new_water_connections: newWater,
+    removed_water_connections: removedWater,
+    closing_water_connections: openingWater + newWater - removedWater,
+    water_connections_net_change: newWater - removedWater,
+    opening_sewer_connections: openingSewer,
+    new_sewer_connections: newSewer,
+    removed_sewer_connections: removedSewer,
+    closing_sewer_connections: openingSewer + newSewer - removedSewer,
+    sewer_connections_net_change: newSewer - removedSewer,
+    created_at: "2026-11-08T10:00:00Z",
+  };
+});
+
+const demoVisits: FieldVisit[] = demoWasas.slice(0, 18).map((wasa, index) => {
+  const directorIndex = Math.floor(index / 3);
+  return {
+    id: `visit-${index + 1}`,
+    director_id: `director-${directorIndex + 1}`,
+    wasa_id: wasa.id,
+    visit_date: `2026-11-${String(18 - (index % 14)).padStart(2, "0")}`,
+    location: `${wasa.name.replace(" WASA", "")} operational division`,
+    purpose: index % 2 === 0 ? "Revenue recovery review" : "Field and service delivery inspection",
+    activities_performed: "Reviewed recovery teams, pending consumer surveys and connection records.",
+    issues_identified: "Aging arrears and incomplete field records require follow-up.",
+    instructions_given: "Update division records and submit a corrective action report.",
+    progress_achieved: "Assigned actions and responsible officers confirmed.",
+    pending_actions: "Submit follow-up progress within seven days.",
+    responsible_officer: "Area Deputy Director",
+    expected_completion_date: "2026-11-28",
+    remarks: null,
+    attachment_path: null,
+    created_at: "2026-11-18T09:00:00Z",
+  };
+});
+
+const demoData: AppData = {
+  directors: demoDirectors,
+  wasas: demoWasas,
+  assignments: demoAssignments,
+  reports: demoReports,
+  visits: demoVisits,
+  targets: demoDirectors.slice(0, 7).flatMap((director, index) => [
+    { id: `target-revenue-${index + 1}`, metric: "revenue_collection", period_type: "monthly" as const, period_year: 2026, period_month: 11, director_id: director.id, wasa_id: null, target_value: 36_000_000 + index * 3_000_000 },
+    { id: `target-arrears-${index + 1}`, metric: "arrears_recovery", period_type: "monthly" as const, period_year: 2026, period_month: 11, director_id: director.id, wasa_id: null, target_value: 7_000_000 + index * 500_000 },
+  ]),
+};
 const metrics = [
   ["revenue_collection", "Revenue collection"],
   ["arrears_recovery", "Arrears recovery"],
@@ -156,6 +284,7 @@ function App() {
   const [wasaFilter, setWasaFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
   const [reportEditor, setReportEditor] = useState<MonthlyReport | "new" | null>(null);
   const [visitEditor, setVisitEditor] = useState(false);
   const [targetEditor, setTargetEditor] = useState(false);
@@ -435,7 +564,14 @@ function App() {
   };
 
   const signOut = async () => {
-    if (!supabase) return;
+    if (!supabase) {
+      setSessionUser(null);
+      setProfile(null);
+      setPreviewMode(false);
+      setData(emptyData);
+      setPage("overview");
+      return;
+    }
     const { error: signOutError } = await supabase.auth.signOut();
     if (signOutError) setError(signOutError.message);
     else {
@@ -672,6 +808,15 @@ function App() {
     );
   };
 
+  const openDemoDashboard = () => {
+    setPreviewMode(true);
+    setSessionUser({ id: "demo-user", email: "demo@example.gov.pk" });
+    setProfile({ id: "demo-user", full_name: "Ayesha Rahman", role: "admin", director_id: null });
+    setData(demoData);
+    setLoading(false);
+    setError("");
+  };
+
   const nav = [
     { id: "overview" as const, label: "Overview", icon: LayoutDashboard },
     { id: "monthly" as const, label: "Monthly reports", icon: ClipboardCheck },
@@ -685,7 +830,7 @@ function App() {
     ]),
   ];
 
-  if (!isSupabaseConfigured) return <SetupScreen />;
+  if (!isSupabaseConfigured && !previewMode) return <SetupScreen onPreview={openDemoDashboard} />;
   if (loading) return <div className="loading-screen"><span className="spinner" />Loading secure workspace…</div>;
   if (!sessionUser || !profile) {
     return (
@@ -908,16 +1053,46 @@ function App() {
   );
 }
 
-function SetupScreen() {
+function SetupScreen({ onPreview }: { onPreview: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const envText = "VITE_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co\nVITE_SUPABASE_ANON_KEY=YOUR_PUBLIC_KEY";
+  const copyEnv = async () => {
+    try {
+      await navigator.clipboard.writeText(envText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      window.alert("Copy was blocked by your browser. Copy the values from the panel manually.");
+    }
+  };
   return (
     <div className="setup-screen">
       <div className="setup-card">
-        <div className="setup-icon"><Settings2 size={26} /></div>
-        <p className="eyebrow">INITIAL CONFIGURATION</p>
-        <h1>Connect your Supabase project</h1>
-        <p>This application is configured for Supabase Authentication and PostgreSQL. Add the public project URL and publishable/anon key to a local <code>.env</code> file to enable sign-in.</p>
-        <div className="code-block">VITE_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co<br />VITE_SUPABASE_ANON_KEY=YOUR_PUBLIC_KEY</div>
-        <p className="setup-foot"><LockKeyhole size={15} /> Never put a Supabase service-role key in the browser.</p>
+        <div className="setup-header">
+          <div className="setup-icon"><Droplets size={24} /></div>
+          <div>
+            <p className="eyebrow">WASA PERFORMANCE SYSTEM</p>
+            <h1>Workspace setup</h1>
+          </div>
+        </div>
+        <p className="setup-lead">Connect Supabase to enable secure sign-in and live reporting, or preview the dashboard with sample data.</p>
+        <div className="setup-steps">
+          <div><span>1</span><p><strong>Create the environment file</strong><small>Add the variables to <code>.env</code> in the project root.</small></p></div>
+          <div><span>2</span><p><strong>Add your public credentials</strong><small>Use the project URL and publishable/anon key.</small></p></div>
+        </div>
+        <div className="code-block">
+          <button type="button" className="copy-button" onClick={() => void copyEnv()} aria-label="Copy environment variables">
+            {copied ? <Check size={14} /> : <Paperclip size={14} />}
+            {copied ? "Copied" : "Copy"}
+          </button>
+          <code>VITE_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co</code>
+          <code>VITE_SUPABASE_ANON_KEY=YOUR_PUBLIC_KEY</code>
+        </div>
+        <div className="setup-actions">
+          <button className="secondary-btn" type="button" onClick={onPreview}>Preview dashboard</button>
+          <button className="primary-btn" type="button" onClick={() => void copyEnv()}>{copied ? "Copied" : "Copy configuration"}</button>
+        </div>
+        <p className="setup-foot"><LockKeyhole size={14} /> Never add a Supabase service-role key to browser environment variables.</p>
       </div>
     </div>
   );
