@@ -179,6 +179,10 @@ td small { color: #98a4ae; display: block; font-size: 8px; margin-top: 4px; }
 .info-callout strong { color: #416d63; font-size: 9px; }
 .info-callout span { color: #78918a; font-size: 9px; line-height: 1.5; margin-top: 3px; }
 .period-chip { align-items: center; background: #f4f7f8; border-radius: 5px; color: #687c8d; display: inline-flex; font-size: 9px; gap: 6px; padding: 7px 9px; }
+.target-table .table-toolbar { align-items: flex-start; flex-direction: column; gap: 10px; }
+.target-table .toolbar-actions { flex-wrap: wrap; width: 100%; }
+.target-table .toolbar-select { max-width: 170px; }
+.target-table .target-search-btn { margin-left: auto; min-width: 140px; }
 .target-table .achievement-cell { align-items: center; display: flex; gap: 7px; min-width: 93px; }
 .progress-track { background: #edf1f2; border-radius: 8px; height: 5px; overflow: hidden; width: 52px; }
 .progress-track span { background: #249175; border-radius: inherit; display: block; height: 100%; }
@@ -354,6 +358,7 @@ td small { color: #98a4ae; display: block; font-size: 8px; margin-top: 4px; }
   .stats-strip strong { font-size: 16px; }
   .table-toolbar { align-items: flex-start; flex-direction: column; gap: 10px; }
   .table-toolbar .toolbar-actions { flex-wrap: wrap; justify-content: flex-start; width: 100%; }
+  .target-table .target-search-btn { flex: 1 1 100%; margin-left: 0; }
   .table-toolbar > .search-field { width: 100%; }
   .search-field { flex: 1; }
   .search-field input { width: 100%; }

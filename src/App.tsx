@@ -1466,8 +1466,8 @@ function TargetsPage(props: {
     </div>
     <div className="panel data-panel target-table">
       <div className="table-toolbar">
-        <div><h3>Target performance report</h3><p>{rows.length} matching targets · annual results are year-to-date through {monthNames[props.month - 1]}</p></div>
-        <div className="toolbar-actions">
+        <div><h3>Search target performance</h3><p>Select the filters below, then choose Search targets. {rows.length} matching targets · annual results are year-to-date through {monthNames[props.month - 1]}.</p></div>
+        <div className="toolbar-actions target-search-actions">
           <select className="toolbar-select" aria-label="Filter by target scope" value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value as typeof scopeFilter)}>
             <option value="all">All areas</option><option value="wasa">WASA-wise</option><option value="director">Director-wise</option>
           </select>
@@ -1477,7 +1477,7 @@ function TargetsPage(props: {
           <select className="toolbar-select" aria-label="Filter by performance metric" value={metricFilter} onChange={(event) => setMetricFilter(event.target.value)}>
             <option value="all">All metrics</option>{metrics.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
           </select>
-          <button className="primary-btn compact-btn" onClick={applyFilters}><Search size={14} /> Search</button>
+          <button className="primary-btn compact-btn target-search-btn" onClick={applyFilters}><Search size={14} /> Search targets</button>
           <button className="secondary-btn compact-btn" onClick={clearFilters}>Clear</button>
         </div>
       </div>
