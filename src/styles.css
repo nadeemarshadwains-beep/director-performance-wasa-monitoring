@@ -248,6 +248,14 @@ td small { color: #98a4ae; display: block; font-size: 8px; margin-top: 4px; }
 .target-save-note.is-error { background: #fff1ef; color: #ad554d; }
 .target-save-note.is-error svg { color: #ad554d; }
 .target-save-note .secondary-btn { flex: 0 0 auto; }
+.invite-result { align-items: flex-start; }
+.invite-result > div:last-child { display: grid; gap: 4px; }
+.invite-result strong { color: #416d63; font-size: 9px; }
+.invite-result span { line-height: 1.5; }
+.invite-result.is-success { background: #edf7f1; color: #36795f; }
+.invite-result.is-error { background: #fff1ef; color: #ad554d; }
+.invite-result.is-error svg, .invite-result.is-error strong { color: #ad554d; }
+.invite-result a { color: #246f5d; font-weight: 600; text-decoration: underline; }
 .modal-actions { border-top: 1px solid #edf1f3; display: flex; gap: 8px; justify-content: flex-end; margin-top: 3px; padding-top: 12px; }
 .login-screen { background: #fff; display: grid; grid-template-columns: 1.08fr .92fr; min-height: 100vh; }
 .login-visual { background: radial-gradient(circle at 84% 12%, #224f64 0, transparent 37%), linear-gradient(145deg, #102a43 0%, #163d55 56%, #175c5d 100%); color: white; display: flex; flex-direction: column; overflow: hidden; padding: 37px clamp(35px, 7vw, 100px); position: relative; }

@@ -785,17 +785,53 @@ function App() {
     }
   };
 
-  const createDirector = async (values: Record<string, string>) => {
-    if (!supabase) return;
-    const { error: invokeError } = await supabase.functions.invoke("admin-create-user", {
-      body: { full_name: values.full_name.trim(), email: values.email.trim() },
-    });
-    if (invokeError) setError(invokeError.message);
-    else {
-      setManagerEditor(false);
-      setNotice("Director account invitation sent.");
-      await loadData();
+  const createDirector = async (values: Record<string, string>): Promise<{ ok: boolean; message: string }> => {
+    if (!supabase) return { ok: false, message: "Supabase is not configured, so the invitation cannot be sent." };
+    let inviteData: unknown;
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke("admin-create-user", {
+        body: { full_name: values.full_name.trim(), email: values.email.trim() },
+      });
+      if (invokeError) {
+        let detail = invokeError.message;
+        const context = "context" in invokeError ? invokeError.context : null;
+        if (context instanceof Response) {
+          const responseBody: unknown = await context.clone().json().catch(() => null);
+          if (typeof responseBody === "object" && responseBody !== null
+            && "error" in responseBody && typeof responseBody.error === "string") {
+            detail = responseBody.error;
+          }
+        }
+        const normalized = detail.toLowerCase();
+        if (normalized.includes("email address not authorized") || normalized.includes("email not authorized")) {
+          return { ok: false, message: `Supabase's default email service only sends to addresses in your Supabase organization. Configure custom SMTP in Supabase Dashboard > Authentication > SMTP Settings. Details: ${detail}` };
+        }
+        if (normalized.includes("rate limit") || normalized.includes("too many requests")) {
+          return { ok: false, message: `Supabase's email sending limit was reached. Wait before retrying or configure custom SMTP. Details: ${detail}` };
+        }
+        if (normalized.includes("already registered") || normalized.includes("already exists")) {
+          return { ok: false, message: `This email already has an account or pending invitation. Check Supabase Authentication > Users before inviting again. Details: ${detail}` };
+        }
+        return { ok: false, message: `The invitation request failed: ${detail}` };
+      }
+      inviteData = data;
+    } catch (inviteError) {
+      return { ok: false, message: `The invitation request failed: ${messageFor(inviteError)}` };
     }
+    if (typeof inviteData === "object" && inviteData !== null
+      && "error" in inviteData && typeof inviteData.error === "string") {
+      return { ok: false, message: `The invitation request failed: ${inviteData.error}` };
+    }
+    try {
+      await loadData();
+    } catch (refreshError) {
+      setError(`The invitation request was accepted, but the Director list could not refresh: ${messageFor(refreshError)}`);
+    }
+    setNotice("Supabase accepted the Director invitation request.");
+    return {
+      ok: true,
+      message: "Supabase accepted the invitation request, but this does not guarantee inbox delivery. Ask the Director to check Spam/Junk. Without custom SMTP, Supabase's default email service only sends to addresses in your Supabase organization and has a low sending limit. Configure custom SMTP for external Director addresses.",
+    };
   };
 
   const saveWasa = async (values: Record<string, string>) => {
@@ -1834,18 +1870,33 @@ function TargetEditor({ directors, wasas, month, year, error, onClose, onSave }:
   </Modal>;
 }
 
-function DirectorEditor({ onClose, onSave }: { onClose: () => void; onSave: (values: Record<string, string>) => Promise<void> }) {
+function DirectorEditor({ onClose, onSave }: { onClose: () => void; onSave: (values: Record<string, string>) => Promise<{ ok: boolean; message: string }> }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const entries = Object.fromEntries(new FormData(event.currentTarget).entries());
-    await onSave(Object.fromEntries(Object.entries(entries).map(([key, value]) => [key, String(value)])));
+    setBusy(true);
+    setResult(null);
+    try {
+      const response = await onSave(Object.fromEntries(Object.entries(entries).map(([key, value]) => [key, String(value)])));
+      setResult(response);
+    } finally {
+      setBusy(false);
+    }
   };
-  return <Modal title="Invite a Director" description="An account invitation will be sent securely by Supabase Auth." onClose={onClose}>
+  const close = () => { if (!busy) onClose(); };
+  return <Modal title="Invite a Director" description="Create the Director account and request an invitation email through Supabase Auth." onClose={close}>
     <form className="form-body" onSubmit={(event) => void submit(event)}>
-      <Field label="Full name" required><input name="full_name" required minLength={2} placeholder="Director full name" /></Field>
-      <Field label="Official email address" required><input name="email" type="email" required placeholder="name@organization.gov.pk" /></Field>
-      <div className="form-note"><ShieldCheck size={15} /> This creates a Director identity. WASA access is granted separately through assignments.</div>
-      <div className="modal-actions"><button type="button" className="secondary-btn" onClick={onClose}>Cancel</button><button className="primary-btn">Send invitation</button></div>
+      <Field label="Full name" required><input name="full_name" required minLength={2} placeholder="Director full name" disabled={busy || result?.ok === true} onChange={() => setResult(null)} /></Field>
+      <Field label="Official email address" required><input name="email" type="email" required placeholder="name@organization.gov.pk" disabled={busy || result?.ok === true} onChange={() => setResult(null)} /></Field>
+      <div className="form-note"><ShieldCheck size={15} /><span>This creates a Director account. Assign a WASA separately after the Director is added.</span></div>
+      <div className="form-note"><AlertCircle size={15} /><span>Email delivery depends on Supabase Auth settings. Without custom SMTP, the default service only emails addresses in your Supabase organization and has a low sending limit. Configure SMTP for external Directors; ask them to check Spam/Junk. <a href="https://supabase.com/docs/guides/auth/auth-smtp" target="_blank" rel="noreferrer">SMTP setup guide</a></span></div>
+      {result && <div className={`form-note invite-result ${result.ok ? "is-success" : "is-error"}`} role={result.ok ? "status" : "alert"}><div>{result.ok ? <Check size={16} /> : <AlertCircle size={16} />}</div><div><strong>{result.ok ? "Invitation request accepted" : "Invitation was not sent"}</strong><span>{result.message}</span></div></div>}
+      <div className="modal-actions">
+        <button type="button" className="secondary-btn" disabled={busy} onClick={close}>{result?.ok ? "Done" : "Cancel"}</button>
+        {!result?.ok && <button className="primary-btn" disabled={busy}>{busy ? "Sending invitation…" : result ? "Retry invitation" : "Send invitation"}<Users size={16} /></button>}
+      </div>
     </form>
   </Modal>;
 }
