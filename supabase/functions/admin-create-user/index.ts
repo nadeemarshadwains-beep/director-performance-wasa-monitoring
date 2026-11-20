@@ -36,12 +36,11 @@ Deno.serve(async (request: Request) => {
   const adminClient = createClient(projectUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data: callerProfile, error: profileError } = await adminClient
-    .from("profiles")
-    .select("role")
-    .eq("id", userData.user.id)
-    .single();
-  if (profileError || callerProfile?.role !== "admin") {
+  const { data: callerIsAdmin, error: authorizationError } = await callerClient.rpc("is_admin");
+  if (authorizationError) {
+    return response({ error: "Could not verify administrator permissions." }, 500);
+  }
+  if (callerIsAdmin !== true) {
     return response({ error: "Administrator permission is required." }, 403);
   }
 

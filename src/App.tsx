@@ -1552,32 +1552,41 @@ function TeamPage(props: {
   const [editing, setEditing] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [assignmentForm, setAssignmentForm] = useState(false);
+  const [assignmentDirector, setAssignmentDirector] = useState("");
   const openAssignments = (wasaId: string) => props.assignments.find((item) => item.wasa_id === wasaId && !item.valid_to);
+  const startAssignment = (directorId = "") => {
+    setAssignmentDirector(directorId);
+    setAssignmentForm(true);
+  };
   const submitAssign = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget).entries());
     props.onAssign(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value)])));
     setAssignmentForm(false);
+    setAssignmentDirector("");
   };
   return <>
-    <PageHeading eyebrow="ADMINISTRATION" title="Directors & WASAs" description="Maintain the organization list and active Director–WASA assignments." actions={<><button className="secondary-btn" onClick={props.onNewWasa}><Plus size={16} /> Add WASA</button><button className="primary-btn" onClick={props.onNewDirector}><Users size={16} /> Invite Director</button></>} />
+    <PageHeading eyebrow="ADMINISTRATION" title="Directors & WASAs" description="Invite Directors and assign each one to the districts (WASAs) they manage." actions={<><button className="secondary-btn" onClick={props.onNewWasa}><Plus size={16} /> Add WASA</button><button className="primary-btn" onClick={props.onNewDirector}><Users size={16} /> Invite Director</button></>} />
     <div className="stats-strip"><div><span>Active Directors</span><strong>{props.directors.filter((item) => item.is_active).length}</strong></div><div><span>Active WASAs</span><strong>{props.wasas.filter((item) => item.is_active).length}</strong></div><div><span>Current assignments</span><strong>{props.assignments.length}</strong></div><div><span>Unassigned WASAs</span><strong>{props.wasas.filter((item) => item.is_active && !openAssignments(item.id)).length}</strong></div></div>
     <div className="team-grid">
-      <div className="panel data-panel"><div className="table-toolbar"><div><h3>Director accounts</h3><p>Invitation, activation and assignment management</p></div></div>
-        <div className="table-wrap"><table><thead><tr><th>DIRECTOR</th><th>EMAIL</th><th>WASAs</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
+      <div className="panel data-panel"><div className="table-toolbar"><div><h3>Director accounts</h3><p>Invitation, activation and district assignment management</p></div></div>
+        <div className="table-wrap"><table><thead><tr><th>DIRECTOR</th><th>EMAIL</th><th>ASSIGNED DISTRICTS</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>
           {props.directors.length ? props.directors.map((director) => {
-            const count = props.assignments.filter((item) => item.director_id === director.id).length;
-            return <tr key={director.id}><td>{editing === director.id ? <input className="inline-input" value={editName} onChange={(event) => setEditName(event.target.value)} /> : <strong>{director.full_name}</strong>}</td><td>{director.email}</td><td>{count}</td><td><span className={`badge ${director.is_active ? "badge-approved" : "badge-draft"}`}>{director.is_active ? "Active" : "Inactive"}</span></td><td>{editing === director.id ? <div className="row-actions"><button className="small-action approve" onClick={() => { props.onUpdateDirector(director, editName, director.is_active); setEditing(null); }}><Check size={15} /></button><button className="small-action return" onClick={() => setEditing(null)}><X size={15} /></button></div> : <button className="small-action edit" onClick={() => { setEditing(director.id); setEditName(director.full_name); }} title="Edit Director name"><Settings2 size={15} /></button>}</td></tr>;
+            const assignedDistricts = props.assignments
+              .filter((item) => item.director_id === director.id)
+              .map((item) => props.wasas.find((wasa) => wasa.id === item.wasa_id)?.name)
+              .filter((name): name is string => Boolean(name));
+            return <tr key={director.id}><td>{editing === director.id ? <input className="inline-input" value={editName} onChange={(event) => setEditName(event.target.value)} /> : <strong>{director.full_name}</strong>}</td><td>{director.email}</td><td>{assignedDistricts.length ? assignedDistricts.join(", ") : "Not assigned"}</td><td><span className={`badge ${director.is_active ? "badge-approved" : "badge-draft"}`}>{director.is_active ? "Active" : "Inactive"}</span></td><td><div className="row-actions">{editing === director.id ? <><button className="small-action approve" aria-label={`Save ${director.full_name}`} onClick={() => { props.onUpdateDirector(director, editName, director.is_active); setEditing(null); }}><Check size={15} /></button><button className="small-action return" aria-label="Cancel name edit" onClick={() => setEditing(null)}><X size={15} /></button></> : <><button className="small-action edit" aria-label={`Assign district to ${director.full_name}`} title="Assign district" onClick={() => startAssignment(director.id)}><MapPinned size={15} /></button><button className="small-action edit" aria-label={`Edit ${director.full_name}`} title="Edit Director name" onClick={() => { setEditing(director.id); setEditName(director.full_name); }}><Settings2 size={15} /></button></>}</div></td></tr>;
           }) : <EmptyRow colSpan={5} text="No Directors added yet." />}
         </tbody></table></div>
       </div>
-      <div className="panel data-panel"><div className="table-toolbar"><div><h3>WASA directory</h3><p>Assign a WASA to a Director or maintain its status</p></div><button className="secondary-btn compact-btn" onClick={() => setAssignmentForm(!assignmentForm)}><Settings2 size={15} /> Assign WASA</button></div>
+      <div className="panel data-panel"><div className="table-toolbar"><div><h3>District / WASA directory</h3><p>Assign a district to a Director or maintain its status</p></div><button className="secondary-btn compact-btn" onClick={() => assignmentForm ? setAssignmentForm(false) : startAssignment()}><MapPinned size={15} /> Assign district</button></div>
         {assignmentForm && <form className="inline-assignment-form" onSubmit={submitAssign}>
-          <label>Director<select name="director_id" required defaultValue=""><option value="" disabled>Select Director</option>{props.directors.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.full_name}</option>)}</select></label>
-          <label>WASA<select name="wasa_id" required defaultValue=""><option value="" disabled>Select WASA</option>{props.wasas.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label>Director<select name="director_id" required value={assignmentDirector} onChange={(event) => setAssignmentDirector(event.target.value)}><option value="" disabled>Select Director</option>{props.directors.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.full_name}</option>)}</select></label>
+          <label>District / WASA<select name="wasa_id" required defaultValue=""><option value="" disabled>Select district / WASA</option>{props.wasas.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <label>Effective date<input name="valid_from" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label><button className="primary-btn compact-btn">Save assignment</button>
         </form>}
-        <div className="table-wrap"><table><thead><tr><th>WASA / CODE</th><th>ASSIGNED DIRECTOR</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
+        <div className="table-wrap"><table><thead><tr><th>DISTRICT / WASA</th><th>ASSIGNED DIRECTOR</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
           {props.wasas.length ? props.wasas.map((wasa) => {
             const assignment = openAssignments(wasa.id);
             return <tr key={wasa.id}><td><strong>{wasa.name}</strong><small>{wasa.code || "No code"}</small></td><td>{assignment ? props.directors.find((item) => item.id === assignment.director_id)?.full_name ?? "Unassigned" : "Unassigned"}</td><td><span className={`badge ${wasa.is_active ? "badge-approved" : "badge-draft"}`}>{wasa.is_active ? "Active" : "Inactive"}</span></td><td><button className="small-action edit" title={wasa.is_active ? "Deactivate WASA" : "Activate WASA"} onClick={() => props.onToggleWasa(wasa)}><Settings2 size={15} /></button></td></tr>;
