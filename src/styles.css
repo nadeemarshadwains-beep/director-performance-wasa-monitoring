@@ -238,6 +238,12 @@ td small { color: #98a4ae; display: block; font-size: 8px; margin-top: 4px; }
 .connection-result b { color: #3d8975; font-weight: 600; }
 .form-note { align-items: flex-start; background: #f1f7f5; border-radius: 5px; color: #6d8d83; display: flex; font-size: 8px; gap: 6px; line-height: 1.45; padding: 8px 9px; }
 .form-note svg { color: #368b73; flex: 0 0 auto; }
+.target-save-note { align-items: center; }
+.target-save-note span { flex: 1; }
+.target-save-note.is-saved { background: #edf7f1; color: #36795f; }
+.target-save-note.is-error { background: #fff1ef; color: #ad554d; }
+.target-save-note.is-error svg { color: #ad554d; }
+.target-save-note .secondary-btn { flex: 0 0 auto; }
 .modal-actions { border-top: 1px solid #edf1f3; display: flex; gap: 8px; justify-content: flex-end; margin-top: 3px; padding-top: 12px; }
 .login-screen { background: #fff; display: grid; grid-template-columns: 1.08fr .92fr; min-height: 100vh; }
 .login-visual { background: radial-gradient(circle at 84% 12%, #224f64 0, transparent 37%), linear-gradient(145deg, #102a43 0%, #163d55 56%, #175c5d 100%); color: white; display: flex; flex-direction: column; overflow: hidden; padding: 37px clamp(35px, 7vw, 100px); position: relative; }

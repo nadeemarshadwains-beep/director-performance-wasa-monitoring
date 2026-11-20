@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   Activity, ArrowDownToLine, BarChart3, Bell, Building2, CalendarDays, Check,
   ChevronDown, CircleDollarSign, ClipboardCheck, FileBarChart2, FileSpreadsheet,
@@ -695,16 +695,29 @@ function App() {
     }
   };
 
-  const saveTarget = async (values: Record<string, string>) => {
-    if (!supabase || !sessionUser) return;
+  const saveTarget = useCallback(async (values: Record<string, string>): Promise<boolean> => {
+    if (!supabase || !sessionUser) {
+      setError("Targets cannot be saved while the app is in preview or signed out.");
+      return false;
+    }
+    const targetValue = Number(values.target_value);
+    const periodYear = Number(values.period_year);
+    const periodMonth = Number(values.period_month);
+    if (!values.scope_id || !values.metric || !Number.isFinite(targetValue) || targetValue <= 0
+      || !Number.isInteger(periodYear) || periodYear < 2000 || periodYear > 2200
+      || (values.period_type === "monthly" && (!Number.isInteger(periodMonth) || periodMonth < 1 || periodMonth > 12))) {
+      setError("Complete all target fields with a valid period and a target greater than zero.");
+      return false;
+    }
+    setError("");
     const row = {
       metric: values.metric,
       period_type: values.period_type,
-      period_year: Number(values.period_year),
-      period_month: values.period_type === "monthly" ? Number(values.period_month) : null,
+      period_year: periodYear,
+      period_month: values.period_type === "monthly" ? periodMonth : null,
       director_id: values.scope_type === "director" ? values.scope_id : null,
       wasa_id: values.scope_type === "wasa" ? values.scope_id : null,
-      target_value: Number(values.target_value),
+      target_value: targetValue,
       created_by: sessionUser.id,
     };
     let existingQuery = supabase.from("performance_targets")
@@ -719,18 +732,19 @@ function App() {
     const { data: existingTarget, error: findError } = await existingQuery.maybeSingle();
     if (findError) {
       setError(findError.message);
-      return;
+      return false;
     }
     const { error: saveError } = existingTarget
       ? await supabase.from("performance_targets").update(row).eq("id", existingTarget.id)
       : await supabase.from("performance_targets").insert(row);
-    if (saveError) setError(saveError.message);
-    else {
-      setTargetEditor(false);
-      setNotice("Target saved.");
-      await loadData();
+    if (saveError) {
+      setError(saveError.message);
+      return false;
     }
-  };
+    setNotice("Target auto-saved to the shared workspace.");
+    await loadData();
+    return true;
+  }, [sessionUser, loadData]);
 
   const decideReport = async (report: MonthlyReport, status: "approved" | "returned") => {
     if (!supabase || !sessionUser) return;
@@ -1388,6 +1402,14 @@ function TargetsPage(props: {
   const [scopeFilter, setScopeFilter] = useState<"all" | "wasa" | "director">("all");
   const [periodFilter, setPeriodFilter] = useState<"all" | "monthly" | "annual">("all");
   const [metricFilter, setMetricFilter] = useState("all");
+  const [appliedFilters, setAppliedFilters] = useState({ scope: "all", period: "all", metric: "all" });
+  const applyFilters = () => setAppliedFilters({ scope: scopeFilter, period: periodFilter, metric: metricFilter });
+  const clearFilters = () => {
+    setScopeFilter("all");
+    setPeriodFilter("all");
+    setMetricFilter("all");
+    setAppliedFilters({ scope: "all", period: "all", metric: "all" });
+  };
   const formatMetric = (metric: string, value: number) => metric === "revenue_collection" || metric === "arrears_recovery" ? money(value) : Math.round(value).toLocaleString();
   const rows = useMemo(() => {
     const targets = props.targets.filter((target) =>
@@ -1424,11 +1446,11 @@ function TargetsPage(props: {
         remaining: Math.max(targetValue - achieved, 0),
       };
     }).filter(({ target }) =>
-      (scopeFilter === "all" || (scopeFilter === "wasa" ? Boolean(target.wasa_id) : Boolean(target.director_id)))
-      && (periodFilter === "all" || target.period_type === periodFilter)
-      && (metricFilter === "all" || target.metric === metricFilter),
+      (appliedFilters.scope === "all" || (appliedFilters.scope === "wasa" ? Boolean(target.wasa_id) : Boolean(target.director_id)))
+      && (appliedFilters.period === "all" || target.period_type === appliedFilters.period)
+      && (appliedFilters.metric === "all" || target.metric === appliedFilters.metric),
     );
-  }, [props.targets, props.reports, props.visits, props.directors, props.wasas, props.year, props.month, scopeFilter, periodFilter, metricFilter]);
+  }, [props.targets, props.reports, props.visits, props.directors, props.wasas, props.year, props.month, appliedFilters]);
   const metCount = rows.filter((row) => row.percentage >= 100).length;
   const belowCount = rows.length - metCount;
   const averageAchievement = rows.length ? rows.reduce((sum, row) => sum + row.percentage, 0) / rows.length : 0;
@@ -1443,7 +1465,7 @@ function TargetsPage(props: {
     </div>
     <div className="panel data-panel target-table">
       <div className="table-toolbar">
-        <div><h3>Target performance report</h3><p>{monthNames[props.month - 1]} {props.year} monthly view · annual targets show year-to-date</p></div>
+        <div><h3>Target performance report</h3><p>{rows.length} matching targets · annual results are year-to-date through {monthNames[props.month - 1]}</p></div>
         <div className="toolbar-actions">
           <select className="toolbar-select" aria-label="Filter by target scope" value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value as typeof scopeFilter)}>
             <option value="all">All areas</option><option value="wasa">WASA-wise</option><option value="director">Director-wise</option>
@@ -1454,6 +1476,8 @@ function TargetsPage(props: {
           <select className="toolbar-select" aria-label="Filter by performance metric" value={metricFilter} onChange={(event) => setMetricFilter(event.target.value)}>
             <option value="all">All metrics</option>{metrics.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
           </select>
+          <button className="primary-btn compact-btn" onClick={applyFilters}><Search size={14} /> Search</button>
+          <button className="secondary-btn compact-btn" onClick={clearFilters}>Clear</button>
         </div>
       </div>
       <div className="table-wrap"><table><thead><tr><th>AREA / ENTITY</th><th>PERIOD</th><th>PERFORMANCE METRIC</th><th>TARGET</th><th>ACHIEVED</th><th>REMAINING</th><th>ACHIEVEMENT</th></tr></thead>
@@ -1692,24 +1716,109 @@ function VisitEditor({ wasas, onClose, onSave }: { wasas: Wasa[]; onClose: () =>
   </Modal>;
 }
 
-function TargetEditor({ directors, wasas, month, year, onClose, onSave }: { directors: Director[]; wasas: Wasa[]; month: number; year: number; onClose: () => void; onSave: (values: Record<string, string>) => Promise<void> }) {
-  const [scope, setScope] = useState<"director" | "wasa">("wasa");
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const entries = Object.fromEntries(new FormData(event.currentTarget).entries());
-    await onSave(Object.fromEntries(Object.entries(entries).map(([key, value]) => [key, String(value)])));
+function TargetEditor({ directors, wasas, month, year, onClose, onSave }: { directors: Director[]; wasas: Wasa[]; month: number; year: number; onClose: () => void; onSave: (values: Record<string, string>) => Promise<boolean> }) {
+  const [values, setValues] = useState<Record<string, string>>({
+    scope_type: "wasa",
+    scope_id: "",
+    metric: metrics[0][0],
+    period_type: "monthly",
+    period_year: String(year),
+    period_month: String(month),
+    target_value: "",
+  });
+  const [saveState, setSaveState] = useState<"incomplete" | "pending" | "saving" | "saved" | "error">("incomplete");
+  const [retryCount, setRetryCount] = useState(0);
+  const saveTimer = useRef<number | null>(null);
+  const lastSavedKey = useRef("");
+  const saving = useRef(false);
+  const saveKey = JSON.stringify(values);
+  const targetValue = Number(values.target_value);
+  const complete = Boolean(values.scope_id)
+    && Number.isFinite(targetValue) && targetValue > 0
+    && Number.isInteger(Number(values.period_year))
+    && (values.period_type === "annual" || (Number.isInteger(Number(values.period_month)) && Number(values.period_month) >= 1 && Number(values.period_month) <= 12));
+  const isBusy = saveState === "saving";
+  const updateValue = (key: string, value: string) => setValues((current) => ({ ...current, [key]: value }));
+
+  const saveCurrentValues = useCallback(async () => {
+    if (saving.current) return false;
+    saving.current = true;
+    setSaveState("saving");
+    try {
+      const saved = await onSave(values);
+      if (saved) {
+        lastSavedKey.current = saveKey;
+        setSaveState("saved");
+      } else {
+        setSaveState("error");
+      }
+      return saved;
+    } finally {
+      saving.current = false;
+    }
+  }, [onSave, saveKey, values]);
+
+  useEffect(() => {
+    if (!complete) {
+      setSaveState("incomplete");
+      return;
+    }
+    if (saveKey === lastSavedKey.current) {
+      setSaveState("saved");
+      return;
+    }
+    setSaveState("pending");
+    const timer = window.setTimeout(() => {
+      saveTimer.current = null;
+      void saveCurrentValues();
+    }, 900);
+    saveTimer.current = timer;
+    return () => {
+      window.clearTimeout(timer);
+      if (saveTimer.current === timer) saveTimer.current = null;
+    };
+  }, [complete, retryCount, saveCurrentValues, saveKey]);
+
+  const closeEditor = async () => {
+    if (saving.current) return;
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    if (complete && saveKey !== lastSavedKey.current) {
+      const saved = await saveCurrentValues();
+      if (!saved) {
+        if (window.confirm("This target could not be saved. Close and discard the unsaved changes?")) onClose();
+        return;
+      }
+    }
+    onClose();
   };
-  return <Modal title="Assign a performance target" description="Targets can differ by WASA and by Director, and can be monthly or annual." onClose={onClose}>
-    <form className="form-body" onSubmit={(event) => void submit(event)}>
-      <Field label="Target scope"><select name="scope_type" value={scope} onChange={(event) => setScope(event.target.value as "director" | "wasa")}><option value="wasa">Individual WASA</option><option value="director">Director</option></select></Field>
-      <Field label={scope === "wasa" ? "WASA" : "Director"}><select name="scope_id" required defaultValue="">{(scope === "wasa" ? wasas : directors).map((item) => <option key={item.id} value={item.id}>{scope === "wasa" ? (item as Wasa).name : (item as Director).full_name}</option>)}</select></Field>
-      <Field label="Performance measure"><select name="metric">{metrics.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field>
-      <div className="form-grid two"><Field label="Target period"><select name="period_type" defaultValue="monthly"><option value="monthly">Monthly</option><option value="annual">Annual</option></select></Field><Field label="Year"><input name="period_year" type="number" min="2000" max="2200" defaultValue={year} required /></Field></div>
-      <Field label="Month (for monthly target)"><select name="period_month" defaultValue={month}>{monthNames.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}</select></Field>
-      <Field label="Assigned target"><input name="target_value" type="number" min="0" step="0.01" required /></Field>
-      <div className="form-note"><Target size={15} /> Existing target for the same measure, scope and period will be updated.</div>
-      <div className="modal-actions"><button type="button" className="secondary-btn" onClick={onClose}>Cancel</button><button className="primary-btn">Save target</button></div>
-    </form>
+
+  const statusText = {
+    incomplete: "Choose an area and enter a target. Changes save automatically after a short pause.",
+    pending: "Changes will save automatically…",
+    saving: "Saving to the shared workspace…",
+    saved: "Saved. This target is available to the Admin and the relevant Director/WASA users.",
+    error: "Could not save. Check the error message above or try again.",
+  }[saveState];
+
+  return <Modal title="Assign a performance target" description="Targets save automatically after you complete the required fields." onClose={() => { void closeEditor(); }}>
+    <div className="form-body">
+      <Field label="Target scope"><select value={values.scope_type} disabled={isBusy} onChange={(event) => setValues((current) => ({ ...current, scope_type: event.target.value, scope_id: "" }))}><option value="wasa">Individual WASA</option><option value="director">Director</option></select></Field>
+      <Field label={values.scope_type === "wasa" ? "WASA" : "Director"}><select value={values.scope_id} disabled={isBusy} onChange={(event) => updateValue("scope_id", event.target.value)}><option value="">Select {values.scope_type === "wasa" ? "a WASA" : "a Director"}</option>{(values.scope_type === "wasa" ? wasas : directors).map((item) => <option key={item.id} value={item.id}>{values.scope_type === "wasa" ? (item as Wasa).name : (item as Director).full_name}</option>)}</select></Field>
+      <Field label="Performance measure"><select value={values.metric} disabled={isBusy} onChange={(event) => updateValue("metric", event.target.value)}>{metrics.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></Field>
+      <div className="form-grid two"><Field label="Target period"><select value={values.period_type} disabled={isBusy} onChange={(event) => updateValue("period_type", event.target.value)}><option value="monthly">Monthly</option><option value="annual">Annual</option></select></Field><Field label="Year"><input type="number" min="2000" max="2200" value={values.period_year} disabled={isBusy} onChange={(event) => updateValue("period_year", event.target.value)} required /></Field></div>
+      <Field label="Month (for monthly target)"><select value={values.period_month} disabled={isBusy || values.period_type === "annual"} onChange={(event) => updateValue("period_month", event.target.value)}>{monthNames.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}</select></Field>
+      <Field label="Assigned target"><input type="number" min="0.01" step="0.01" value={values.target_value} disabled={isBusy} onChange={(event) => updateValue("target_value", event.target.value)} placeholder="Enter target amount" required /></Field>
+      <div className="form-note"><Target size={15} /><span>Existing target for the same measure, area and period is updated automatically. Saved targets are stored online and shared with users who have access to that Director or WASA.</span></div>
+      <div className={`form-note target-save-note ${saveState === "saved" ? "is-saved" : ""} ${saveState === "error" ? "is-error" : ""}`}>
+        {saveState === "saved" ? <Check size={15} /> : saveState === "error" ? <AlertCircle size={15} /> : <RefreshCw size={15} />}
+        <span>{statusText}</span>
+        {saveState === "error" && <button type="button" className="secondary-btn compact-btn" onClick={() => setRetryCount((count) => count + 1)}>Retry</button>}
+      </div>
+      <div className="modal-actions"><button type="button" className="secondary-btn" onClick={() => { void closeEditor(); }}>Close</button></div>
+    </div>
   </Modal>;
 }
 
