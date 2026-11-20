@@ -1027,6 +1027,7 @@ function App() {
               month={month}
               directorName={directorName}
               wasaName={wasaName}
+              onAddDirector={() => setManagerEditor(true)}
               onNew={() => setTargetEditor(true)}
             />
           )}
@@ -1398,18 +1399,21 @@ function VisitsPage(props: { visits: FieldVisit[]; isAdmin: boolean; search: str
 
 function TargetsPage(props: {
   targets: PerformanceTarget[]; reports: MonthlyReport[]; visits: FieldVisit[]; directors: Director[]; wasas: Wasa[];
-  isAdmin: boolean; year: number; month: number; directorName: (id: string) => string; wasaName: (id: string) => string; onNew: () => void;
+  isAdmin: boolean; year: number; month: number; directorName: (id: string) => string; wasaName: (id: string) => string;
+  onAddDirector: () => void; onNew: () => void;
 }) {
   const [scopeFilter, setScopeFilter] = useState<"all" | "wasa" | "director">("all");
+  const [entityFilter, setEntityFilter] = useState("all");
   const [periodFilter, setPeriodFilter] = useState<"all" | "monthly" | "annual">("all");
   const [metricFilter, setMetricFilter] = useState("all");
-  const [appliedFilters, setAppliedFilters] = useState({ scope: "all", period: "all", metric: "all" });
-  const applyFilters = () => setAppliedFilters({ scope: scopeFilter, period: periodFilter, metric: metricFilter });
+  const [appliedFilters, setAppliedFilters] = useState({ scope: "all", entity: "all", period: "all", metric: "all" });
+  const applyFilters = () => setAppliedFilters({ scope: scopeFilter, entity: entityFilter, period: periodFilter, metric: metricFilter });
   const clearFilters = () => {
     setScopeFilter("all");
+    setEntityFilter("all");
     setPeriodFilter("all");
     setMetricFilter("all");
-    setAppliedFilters({ scope: "all", period: "all", metric: "all" });
+    setAppliedFilters({ scope: "all", entity: "all", period: "all", metric: "all" });
   };
   const formatMetric = (metric: string, value: number) => metric === "revenue_collection" || metric === "arrears_recovery" ? money(value) : Math.round(value).toLocaleString();
   const rows = useMemo(() => {
@@ -1448,6 +1452,7 @@ function TargetsPage(props: {
       };
     }).filter(({ target }) =>
       (appliedFilters.scope === "all" || (appliedFilters.scope === "wasa" ? Boolean(target.wasa_id) : Boolean(target.director_id)))
+      && (appliedFilters.entity === "all" || target.director_id === appliedFilters.entity || target.wasa_id === appliedFilters.entity)
       && (appliedFilters.period === "all" || target.period_type === appliedFilters.period)
       && (appliedFilters.metric === "all" || target.metric === appliedFilters.metric),
     );
@@ -1456,7 +1461,7 @@ function TargetsPage(props: {
   const belowCount = rows.length - metCount;
   const averageAchievement = rows.length ? rows.reduce((sum, row) => sum + row.percentage, 0) / rows.length : 0;
   return <>
-    <PageHeading eyebrow="PERFORMANCE MANAGEMENT" title="Targets & achievement" description={`Monitor monthly and year-to-date performance across WASAs and Directors for ${props.year}.`} actions={props.isAdmin && <button className="primary-btn" onClick={props.onNew}><Plus size={17} /> Assign target</button>} />
+    <PageHeading eyebrow="PERFORMANCE MANAGEMENT" title="Targets & achievement" description={`Monitor monthly and year-to-date performance across WASAs and Directors for ${props.year}.`} actions={props.isAdmin && <><button className="secondary-btn" onClick={props.onAddDirector}><Users size={16} /> Invite Director</button><button className="primary-btn" onClick={props.onNew}><Plus size={17} /> Assign target</button></>} />
     <div className="info-callout"><Target size={18} /><div><strong>Achievement is calculated automatically</strong><span>Monthly actuals use submitted or approved reports and recorded visits. Annual targets show year-to-date actuals through {monthNames[props.month - 1]}; draft and returned reports are excluded.</span></div></div>
     <div className="stats-strip">
       <div><span>Targets in view</span><strong>{rows.length}</strong></div>
@@ -1468,8 +1473,14 @@ function TargetsPage(props: {
       <div className="table-toolbar">
         <div><h3>Search target performance</h3><p>Select the filters below, then choose Search targets. {rows.length} matching targets · annual results are year-to-date through {monthNames[props.month - 1]}.</p></div>
         <div className="toolbar-actions target-search-actions">
-          <select className="toolbar-select" aria-label="Filter by target scope" value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value as typeof scopeFilter)}>
+          <select className="toolbar-select" aria-label="Filter target scope" value={scopeFilter} onChange={(event) => { setScopeFilter(event.target.value as typeof scopeFilter); setEntityFilter("all"); }}>
             <option value="all">All areas</option><option value="wasa">WASA-wise</option><option value="director">Director-wise</option>
+          </select>
+          <select className="toolbar-select" aria-label={scopeFilter === "director" ? "Filter by Director" : "Filter by WASA"} value={entityFilter} disabled={scopeFilter === "all"} onChange={(event) => setEntityFilter(event.target.value)}>
+            <option value="all">{scopeFilter === "all" ? "Choose scope first" : `All ${scopeFilter === "director" ? "Directors" : "WASAs"}`}</option>
+            {scopeFilter === "director"
+              ? props.directors.map((director) => <option key={director.id} value={director.id}>{director.full_name}</option>)
+              : scopeFilter === "wasa" ? props.wasas.map((wasa) => <option key={wasa.id} value={wasa.id}>{wasa.name}</option>) : null}
           </select>
           <select className="toolbar-select" aria-label="Filter by reporting period" value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as typeof periodFilter)}>
             <option value="all">Monthly + annual</option><option value="monthly">Monthly</option><option value="annual">Annual / YTD</option>
