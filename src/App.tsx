@@ -1077,6 +1077,7 @@ function App() {
         wasas={data.wasas.filter((item) => item.is_active)}
         month={month}
         year={year}
+        error={error}
         onClose={() => setTargetEditor(false)}
         onSave={saveTarget}
       />}
@@ -1716,7 +1717,7 @@ function VisitEditor({ wasas, onClose, onSave }: { wasas: Wasa[]; onClose: () =>
   </Modal>;
 }
 
-function TargetEditor({ directors, wasas, month, year, onClose, onSave }: { directors: Director[]; wasas: Wasa[]; month: number; year: number; onClose: () => void; onSave: (values: Record<string, string>) => Promise<boolean> }) {
+function TargetEditor({ directors, wasas, month, year, error, onClose, onSave }: { directors: Director[]; wasas: Wasa[]; month: number; year: number; error: string; onClose: () => void; onSave: (values: Record<string, string>) => Promise<boolean> }) {
   const [values, setValues] = useState<Record<string, string>>({
     scope_type: "wasa",
     scope_id: "",
@@ -1800,7 +1801,7 @@ function TargetEditor({ directors, wasas, month, year, onClose, onSave }: { dire
     pending: "Changes will save automatically…",
     saving: "Saving to the shared workspace…",
     saved: "Saved. This target is available to the Admin and the relevant Director/WASA users.",
-    error: "Could not save. Check the error message above or try again.",
+    error: `Could not save${error ? `: ${error}` : "."}`,
   }[saveState];
 
   return <Modal title="Assign a performance target" description="Targets save automatically after you complete the required fields." onClose={() => { void closeEditor(); }}>
