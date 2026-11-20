@@ -272,6 +272,11 @@ async function downloadPdf(reports: MonthlyReport[], wasaName: (id: string) => s
 function App() {
   const [sessionUser, setSessionUser] = useState<{ id: string; email?: string } | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [passwordSetup, setPasswordSetup] = useState(() => {
+    const url = new URL(window.location.href);
+    const authType = url.searchParams.get("type") ?? new URLSearchParams(url.hash.slice(1)).get("type");
+    return authType === "invite" || authType === "recovery" || url.searchParams.has("code");
+  });
   const [data, setData] = useState<AppData>(emptyData);
   const [loading, setLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
@@ -353,7 +358,8 @@ function App() {
       if (authError) setError(authError.message);
       void resolveSession(result.session?.user ?? null);
     });
-    const { data: listener } = client.auth.onAuthStateChange((_event, currentSession) => {
+    const { data: listener } = client.auth.onAuthStateChange((event, currentSession) => {
+      if (event === "PASSWORD_RECOVERY") setPasswordSetup(true);
       void resolveSession(currentSession?.user ?? null);
     });
     return () => {
@@ -561,6 +567,20 @@ function App() {
     });
     if (resetError) setError(resetError.message);
     else setNotice("Password reset instructions have been sent if this account exists.");
+  };
+
+  const handleSetPassword = async (password: string) => {
+    if (!supabase) return false;
+    setError("");
+    const { error: updateError } = await supabase.auth.updateUser({ password });
+    if (updateError) {
+      setError(updateError.message);
+      return false;
+    }
+    setPasswordSetup(false);
+    setNotice("Password saved. Your account is ready to use.");
+    window.history.replaceState({}, document.title, window.location.pathname);
+    return true;
   };
 
   const signOut = async () => {
@@ -832,6 +852,9 @@ function App() {
 
   if (!isSupabaseConfigured && !previewMode) return <SetupScreen onPreview={openDemoDashboard} />;
   if (loading) return <div className="loading-screen"><span className="spinner" />Loading secure workspace…</div>;
+  if (passwordSetup && sessionUser) {
+    return <PasswordSetupScreen email={sessionUser.email ?? ""} error={error} onSave={handleSetPassword} />;
+  }
   if (!sessionUser || !profile) {
     return (
       <LoginScreen
@@ -1143,6 +1166,57 @@ function LoginScreen({ error, onLogin, onReset, profileMissing }: {
           }}>Forgot password?</button>
           <div className="login-assurance"><ShieldCheck size={16} /><span>Protected by secure, role-based access controls</span></div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function PasswordSetupScreen({ email, error, onSave }: {
+  email: string;
+  error: string;
+  onSave: (password: string) => Promise<boolean>;
+}) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [validationError, setValidationError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setValidationError("");
+    if (password !== confirmPassword) {
+      setValidationError("The passwords do not match.");
+      return;
+    }
+    if (password.length < 8) {
+      setValidationError("Use at least 8 characters for your password.");
+      return;
+    }
+    setBusy(true);
+    await onSave(password);
+    setBusy(false);
+  };
+
+  return (
+    <div className="setup-screen">
+      <div className="setup-card password-setup-card">
+        <div className="setup-header">
+          <div className="setup-icon"><LockKeyhole size={22} /></div>
+          <div>
+            <p className="eyebrow">SECURE WORKSPACE</p>
+            <h1>Set your password</h1>
+          </div>
+        </div>
+        <p className="setup-lead">Choose a password for {email || "your account"} to finish setting up your WASA Monitoring access.</p>
+        <form className="login-form password-form" onSubmit={(event) => void submit(event)}>
+          {(error || validationError) && (
+            <div className="alert error-alert"><AlertCircle size={17} /><span>{validationError || error}</span></div>
+          )}
+          <label>New password<input type="password" autoComplete="new-password" minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+          <label>Confirm password<input type="password" autoComplete="new-password" minLength={8} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
+          <button className="primary-btn login-submit" disabled={busy}>{busy ? "Saving password…" : "Save password"}</button>
+        </form>
+        <p className="setup-foot"><ShieldCheck size={14} /> Keep your password private and do not share it.</p>
       </div>
     </div>
   );
