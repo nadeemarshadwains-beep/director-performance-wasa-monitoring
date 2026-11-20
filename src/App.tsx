@@ -557,7 +557,7 @@ function App() {
   const handleReset = async (email: string) => {
     if (!supabase) return;
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin,
+      redirectTo: `${window.location.origin}${import.meta.env.BASE_URL}`,
     });
     if (resetError) setError(resetError.message);
     else setNotice("Password reset instructions have been sent if this account exists.");
