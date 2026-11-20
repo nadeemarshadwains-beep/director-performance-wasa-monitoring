@@ -1899,7 +1899,7 @@ function DirectorEditor({ onClose, onSave }: { onClose: () => void; onSave: (val
     <form className="form-body" onSubmit={(event) => void submit(event)}>
       <Field label="Full name" required><input name="full_name" required minLength={2} placeholder="Director full name" disabled={busy || result?.ok === true} onChange={() => setResult(null)} /></Field>
       <Field label="Official email address" required><input name="email" type="email" required placeholder="name@organization.gov.pk" disabled={busy || result?.ok === true} onChange={() => setResult(null)} /></Field>
-      <div className="form-note"><ShieldCheck size={15} /><span>This creates a Director account. Assign a WASA separately after the Director is added.</span></div>
+      <div className="form-note"><ShieldCheck size={15} /><span>After the invitation is accepted, open Directors & WASAs and use the map-pin action beside the Director to assign one or more districts.</span></div>
       <div className="form-note"><AlertCircle size={15} /><span>Email delivery depends on Supabase Auth settings. Without custom SMTP, the default service only emails addresses in your Supabase organization and has a low sending limit. Configure SMTP for external Directors; ask them to check Spam/Junk. <a href="https://supabase.com/docs/guides/auth/auth-smtp" target="_blank" rel="noreferrer">SMTP setup guide</a></span></div>
       {result && <div className={`form-note invite-result ${result.ok ? "is-success" : "is-error"}`} role={result.ok ? "status" : "alert"}><div>{result.ok ? <Check size={16} /> : <AlertCircle size={16} />}</div><div><strong>{result.ok ? "Invitation request accepted" : "Invitation was not sent"}</strong><span>{result.message}</span></div></div>}
       <div className="modal-actions">
