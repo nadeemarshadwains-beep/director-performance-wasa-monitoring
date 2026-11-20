@@ -1385,48 +1385,87 @@ function TargetsPage(props: {
   targets: PerformanceTarget[]; reports: MonthlyReport[]; visits: FieldVisit[]; directors: Director[]; wasas: Wasa[];
   isAdmin: boolean; year: number; month: number; directorName: (id: string) => string; wasaName: (id: string) => string; onNew: () => void;
 }) {
-  const targets = props.targets.filter((item) =>
-    item.period_year === props.year
-      && (item.period_type === "annual" || item.period_month === props.month)
-      && (item.director_id ? props.directors.some((director) => director.id === item.director_id) : props.wasas.some((wasa) => wasa.id === item.wasa_id)),
-  );
-  const actual = (target: PerformanceTarget) => {
-    const reports = props.reports.filter((report) => report.report_year === props.year
-      && (target.period_type === "annual" || report.report_month === props.month)
-      && (report.status === "submitted" || report.status === "approved")
-      && (target.wasa_id ? report.wasa_id === target.wasa_id : report.director_id === target.director_id));
-    switch (target.metric) {
-      case "revenue_collection": return reports.reduce((sum, row) => sum + numberValue(row.monthly_collection), 0);
-      case "arrears_recovery": return reports.reduce((sum, row) => sum + numberValue(row.arrears_recovered), 0);
-      case "surveys": return reports.reduce((sum, row) => sum + numberValue(row.new_surveys), 0);
-      case "water_connections": return reports.reduce((sum, row) => sum + numberValue(row.new_water_connections), 0);
-      case "sewer_connections": return reports.reduce((sum, row) => sum + numberValue(row.new_sewer_connections), 0);
-      case "field_visits": return props.visits.filter((visit) => {
-        const visitDate = new Date(`${visit.visit_date}T00:00:00`);
-        return visitDate.getFullYear() === props.year
-          && (target.period_type === "annual" || visitDate.getMonth() + 1 === props.month)
-          && (target.wasa_id ? visit.wasa_id === target.wasa_id : visit.director_id === target.director_id);
-      }).length;
-      default: return 0;
-    }
-  };
+  const [scopeFilter, setScopeFilter] = useState<"all" | "wasa" | "director">("all");
+  const [periodFilter, setPeriodFilter] = useState<"all" | "monthly" | "annual">("all");
+  const [metricFilter, setMetricFilter] = useState("all");
   const formatMetric = (metric: string, value: number) => metric === "revenue_collection" || metric === "arrears_recovery" ? money(value) : Math.round(value).toLocaleString();
+  const rows = useMemo(() => {
+    const targets = props.targets.filter((target) =>
+      target.period_year === props.year
+      && (target.period_type === "annual" || target.period_month === props.month)
+      && (target.director_id ? props.directors.some((director) => director.id === target.director_id) : props.wasas.some((wasa) => wasa.id === target.wasa_id)),
+    );
+    return targets.map((target) => {
+      const reports = props.reports.filter((report) => report.report_year === props.year
+        && (target.period_type === "annual" ? report.report_month <= props.month : report.report_month === target.period_month)
+        && (report.status === "submitted" || report.status === "approved")
+        && (target.wasa_id ? report.wasa_id === target.wasa_id : report.director_id === target.director_id));
+      let achieved = 0;
+      switch (target.metric) {
+        case "revenue_collection": achieved = reports.reduce((sum, row) => sum + numberValue(row.monthly_collection), 0); break;
+        case "arrears_recovery": achieved = reports.reduce((sum, row) => sum + numberValue(row.arrears_recovered), 0); break;
+        case "surveys": achieved = reports.reduce((sum, row) => sum + numberValue(row.new_surveys), 0); break;
+        case "water_connections": achieved = reports.reduce((sum, row) => sum + numberValue(row.new_water_connections), 0); break;
+        case "sewer_connections": achieved = reports.reduce((sum, row) => sum + numberValue(row.new_sewer_connections), 0); break;
+        case "field_visits":
+          achieved = props.visits.filter((visit) => {
+            const visitDate = new Date(`${visit.visit_date}T00:00:00`);
+            return visitDate.getFullYear() === props.year
+              && (target.period_type === "annual" ? visitDate.getMonth() + 1 <= props.month : visitDate.getMonth() + 1 === target.period_month)
+              && (target.wasa_id ? visit.wasa_id === target.wasa_id : visit.director_id === target.director_id);
+          }).length;
+          break;
+      }
+      const targetValue = Number(target.target_value);
+      return {
+        target,
+        achieved,
+        percentage: targetValue > 0 ? achieved / targetValue * 100 : 0,
+        remaining: Math.max(targetValue - achieved, 0),
+      };
+    }).filter(({ target }) =>
+      (scopeFilter === "all" || (scopeFilter === "wasa" ? Boolean(target.wasa_id) : Boolean(target.director_id)))
+      && (periodFilter === "all" || target.period_type === periodFilter)
+      && (metricFilter === "all" || target.metric === metricFilter),
+    );
+  }, [props.targets, props.reports, props.visits, props.directors, props.wasas, props.year, props.month, scopeFilter, periodFilter, metricFilter]);
+  const metCount = rows.filter((row) => row.percentage >= 100).length;
+  const belowCount = rows.length - metCount;
+  const averageAchievement = rows.length ? rows.reduce((sum, row) => sum + row.percentage, 0) / rows.length : 0;
   return <>
-    <PageHeading eyebrow="PERFORMANCE MANAGEMENT" title="Targets & achievement" description={`Track assigned goals against recorded results for ${props.year}.`} actions={props.isAdmin && <button className="primary-btn" onClick={props.onNew}><Plus size={17} /> Assign target</button>} />
-    <div className="info-callout"><Target size={18} /><div><strong>Targets are independently assigned</strong><span>Each Director or WASA can have its own monthly and annual target. Actuals use report and visit records for the selected period.</span></div></div>
+    <PageHeading eyebrow="PERFORMANCE MANAGEMENT" title="Targets & achievement" description={`Monitor monthly and year-to-date performance across WASAs and Directors for ${props.year}.`} actions={props.isAdmin && <button className="primary-btn" onClick={props.onNew}><Plus size={17} /> Assign target</button>} />
+    <div className="info-callout"><Target size={18} /><div><strong>Achievement is calculated automatically</strong><span>Monthly actuals use submitted or approved reports and recorded visits. Annual targets show year-to-date actuals through {monthNames[props.month - 1]}; draft and returned reports are excluded.</span></div></div>
+    <div className="stats-strip">
+      <div><span>Targets in view</span><strong>{rows.length}</strong></div>
+      <div><span>Targets met</span><strong>{metCount}</strong></div>
+      <div><span>Below target</span><strong>{belowCount}</strong></div>
+      <div><span>Average achievement</span><strong>{rows.length ? `${averageAchievement.toFixed(1)}%` : "—"}</strong></div>
+    </div>
     <div className="panel data-panel target-table">
-      <div className="table-toolbar"><div><h3>Target register</h3><p>{monthNames[props.month - 1]} / annual · {targets.length} target records</p></div><span className="badge badge-submitted">{targets.length} active targets</span></div>
-      <div className="table-wrap"><table><thead><tr><th>AREA / ENTITY</th><th>PERIOD</th><th>PERFORMANCE METRIC</th><th>TARGET</th><th>ACTUAL</th><th>REMAINING</th><th>ACHIEVEMENT</th></tr></thead>
-        <tbody>{targets.length ? targets.map((target) => {
-          const achieved = actual(target);
-          const percentage = target.target_value ? achieved / Number(target.target_value) * 100 : 0;
+      <div className="table-toolbar">
+        <div><h3>Target performance report</h3><p>{monthNames[props.month - 1]} {props.year} monthly view · annual targets show year-to-date</p></div>
+        <div className="toolbar-actions">
+          <select className="toolbar-select" aria-label="Filter by target scope" value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value as typeof scopeFilter)}>
+            <option value="all">All areas</option><option value="wasa">WASA-wise</option><option value="director">Director-wise</option>
+          </select>
+          <select className="toolbar-select" aria-label="Filter by reporting period" value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as typeof periodFilter)}>
+            <option value="all">Monthly + annual</option><option value="monthly">Monthly</option><option value="annual">Annual / YTD</option>
+          </select>
+          <select className="toolbar-select" aria-label="Filter by performance metric" value={metricFilter} onChange={(event) => setMetricFilter(event.target.value)}>
+            <option value="all">All metrics</option>{metrics.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="table-wrap"><table><thead><tr><th>AREA / ENTITY</th><th>PERIOD</th><th>PERFORMANCE METRIC</th><th>TARGET</th><th>ACHIEVED</th><th>REMAINING</th><th>ACHIEVEMENT</th></tr></thead>
+        <tbody>{rows.length ? rows.map(({ target, achieved, percentage, remaining }) => {
+          const progressWidth = Math.min(Math.max(percentage, 0), 100);
           return <tr key={target.id}>
             <td><strong>{target.director_id ? props.directorName(target.director_id) : props.wasaName(target.wasa_id!)}</strong><small>{target.director_id ? "Director target" : "WASA target"}</small></td>
-            <td>{target.period_type === "annual" ? `${target.period_year} · Annual` : `${monthNames[(target.period_month ?? 1) - 1]} ${target.period_year}`}</td>
+            <td>{target.period_type === "annual" ? `${target.period_year} · Annual / YTD` : `${monthNames[(target.period_month ?? 1) - 1]} ${target.period_year}`}</td>
             <td>{metrics.find(([key]) => key === target.metric)?.[1] ?? target.metric}</td><td>{formatMetric(target.metric, Number(target.target_value))}</td><td className="amount-strong">{formatMetric(target.metric, achieved)}</td>
-            <td>{formatMetric(target.metric, Math.max(Number(target.target_value) - achieved, 0))}</td><td><div className="achievement-cell"><div className="progress-track"><span style={{ width: `${Math.min(percentage, 100)}%` }} /></div><b>{percentage.toFixed(0)}%</b></div></td>
+            <td>{formatMetric(target.metric, remaining)}</td><td><div className="achievement-cell"><div className="progress-track"><span style={{ width: `${progressWidth}%` }} /></div><b>{percentage.toFixed(1)}%</b></div></td>
           </tr>;
-        }) : <EmptyRow colSpan={7} text="No targets are set for this period. Admin can assign targets individually." />}</tbody>
+        }) : <EmptyRow colSpan={7} text="No targets match this report. Try another filter or ask an Admin to assign targets." />}</tbody>
       </table></div>
     </div>
   </>;
