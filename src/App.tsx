@@ -7,7 +7,7 @@ import {
   Paperclip,
 } from "lucide-react";
 import { createWorkbook } from "./lib/workbook";
-import { isSupabaseConfigured, supabase } from "./lib/supabase";
+import { isPasswordSetupRedirect, isSupabaseConfigured, supabase } from "./lib/supabase";
 import type {
   Assignment, Director, FieldVisit, MonthlyReport, PerformanceTarget, Profile, Wasa,
 } from "./types";
@@ -272,11 +272,7 @@ async function downloadPdf(reports: MonthlyReport[], wasaName: (id: string) => s
 function App() {
   const [sessionUser, setSessionUser] = useState<{ id: string; email?: string } | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [passwordSetup, setPasswordSetup] = useState(() => {
-    const url = new URL(window.location.href);
-    const authType = url.searchParams.get("type") ?? new URLSearchParams(url.hash.slice(1)).get("type");
-    return authType === "invite" || authType === "recovery" || url.searchParams.has("code");
-  });
+  const [passwordSetup, setPasswordSetup] = useState(isPasswordSetupRedirect);
   const [data, setData] = useState<AppData>(emptyData);
   const [loading, setLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
