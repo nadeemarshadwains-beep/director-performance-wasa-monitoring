@@ -14,7 +14,9 @@ type Props = {
   visitsTrend: { month: string; visits: number }[];
   directorPerformance: { name: string; fullName: string; collection: number; recovery: number; visits: number }[];
   wasaPerformance: { name: string; demand: number; collection: number }[];
+  showWasaScope: boolean;
   targetComparison: { label: string; target: number; actual: number }[];
+  scopeTitle: string;
   pendingCount: number;
   pendingSubmissions: number;
   reportCount: number;
@@ -33,13 +35,19 @@ export default function OverviewCharts(props: Props) {
         <div className="chart-area"><ResponsiveContainer width="100%" height="100%"><LineChart data={props.monthlyTrend} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}><CartesianGrid stroke="#edf1f5" vertical={false} /><XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#8290a1" }} /><YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#8290a1" }} tickFormatter={(value: number) => value >= 1000000 ? `${(value / 1000000).toFixed(0)}m` : value >= 1000 ? `${(value / 1000).toFixed(0)}k` : String(value)} /><Tooltip formatter={(value) => money(Number(value))} /><Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} /><Line type="monotone" dataKey="demand" name="Demand" stroke="#8ba0b5" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="collected" name="Collection" stroke="#168b72" strokeWidth={2.5} dot={{ r: 3, fill: "#168b72" }} /></LineChart></ResponsiveContainer></div>
       </div>
       <div className="panel chart-panel">
-        <div className="panel-heading"><div><h3>Director comparison</h3><p>Recovery rate · {props.monthLabel}</p></div><span className="panel-icon"><Users size={17} /></span></div>
-        <div className="chart-area"><ResponsiveContainer width="100%" height="100%"><BarChart data={props.directorPerformance} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}><CartesianGrid stroke="#edf1f5" vertical={false} /><XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#8290a1" }} /><YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#8290a1" }} unit="%" /><Tooltip formatter={(value) => `${value}%`} labelFormatter={(label) => props.directorPerformance.find((item) => item.name === label)?.fullName ?? label} /><Bar dataKey="recovery" name="Recovery" radius={[4, 4, 0, 0]}>{props.directorPerformance.map((item, index) => <Cell key={item.fullName} fill={index === 0 ? "#168b72" : "#b9d8d0"} />)}</Bar></BarChart></ResponsiveContainer></div>
+        <div className="panel-heading"><div><h3>{props.scopeTitle}</h3><p>{props.showWasaScope ? `Demand vs. collection · ${props.monthLabel}` : `Recovery rate · ${props.monthLabel}`}</p></div><span className="panel-icon">{props.showWasaScope ? <Building2 size={17} /> : <Users size={17} />}</span></div>
+        <div className="chart-area">
+          {props.showWasaScope
+            ? props.wasaPerformance.length
+              ? <ResponsiveContainer width="100%" height="100%"><BarChart data={props.wasaPerformance} layout="vertical" margin={{ top: 8, right: 10, left: 4, bottom: 0 }}><CartesianGrid stroke="#edf1f5" horizontal={false} /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={95} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#607184" }} /><Tooltip formatter={(value) => money(Number(value))} /><Legend iconType="circle" wrapperStyle={{ fontSize: 10 }} /><Bar dataKey="demand" name="Demand" fill="#b9c9d4" radius={[0, 4, 4, 0]} barSize={12} /><Bar dataKey="collection" name="Collection" fill="#168b72" radius={[0, 4, 4, 0]} barSize={12} /></BarChart></ResponsiveContainer>
+              : <div className="charts-loading">No active WASA districts are assigned to this Director yet.</div>
+            : <ResponsiveContainer width="100%" height="100%"><BarChart data={props.directorPerformance} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}><CartesianGrid stroke="#edf1f5" vertical={false} /><XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#8290a1" }} /><YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#8290a1" }} unit="%" /><Tooltip formatter={(value) => `${value}%`} labelFormatter={(label) => props.directorPerformance.find((item) => item.name === label)?.fullName ?? label} /><Bar dataKey="recovery" name="Recovery" radius={[4, 4, 0, 0]}>{props.directorPerformance.map((item, index) => <Cell key={item.fullName} fill={index === 0 ? "#168b72" : "#b9d8d0"} />)}</Bar></BarChart></ResponsiveContainer>}
+        </div>
       </div>
-      <div className="panel chart-panel">
+      {!props.showWasaScope && <div className="panel chart-panel">
         <div className="panel-heading"><div><h3>Top WASA collections</h3><p>{props.monthLabel} · Rs.</p></div><span className="panel-icon"><Building2 size={17} /></span></div>
         <div className="chart-area"><ResponsiveContainer width="100%" height="100%"><BarChart data={props.wasaPerformance} layout="vertical" margin={{ top: 2, right: 10, left: 4, bottom: 0 }}><CartesianGrid stroke="#edf1f5" horizontal={false} /><XAxis type="number" hide /><YAxis dataKey="name" type="category" width={95} tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: "#607184" }} /><Tooltip formatter={(value) => money(Number(value))} /><Bar dataKey="collection" name="Collected" fill="#168b72" radius={[0, 4, 4, 0]} barSize={14} /></BarChart></ResponsiveContainer></div>
-      </div>
+      </div>}
       <div className="panel status-panel">
         <div className="panel-heading"><div><h3>Reporting status</h3><p>For {props.monthLabel}</p></div><span className="panel-icon status-icon"><ClipboardCheck size={17} /></span></div>
         <div className="status-total"><strong>{props.pendingCount}</strong><span>pending or returned reports</span></div>

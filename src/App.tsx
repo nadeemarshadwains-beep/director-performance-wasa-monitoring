@@ -283,6 +283,10 @@ function App() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [directorFilter, setDirectorFilter] = useState("all");
   const [wasaFilter, setWasaFilter] = useState("all");
+  const changeDirectorFilter = (value: string) => {
+    setDirectorFilter(value);
+    setWasaFilter("all");
+  };
   const [search, setSearch] = useState("");
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
@@ -450,7 +454,9 @@ function App() {
     }).sort((a, b) => b.recovery - a.recovery), [data.directors, currentReports, currentVisits, directorFilter]);
 
   const wasaPerformance = useMemo(() => data.wasas
-    .filter((wasa) => wasa.is_active && (wasaFilter === "all" || wasa.id === wasaFilter))
+    .filter((wasa) => wasa.is_active
+      && (wasaFilter === "all" || wasa.id === wasaFilter)
+      && (directorFilter === "all" || assignments.some((item) => item.director_id === directorFilter && item.wasa_id === wasa.id)))
     .map((wasa) => {
       const rows = currentReports.filter((item) => item.wasa_id === wasa.id);
       return {
@@ -459,15 +465,19 @@ function App() {
         collection: rows.reduce((sum, item) => sum + numberValue(item.monthly_collection), 0),
       };
     })
-    .filter((item) => item.demand || item.collection)
+    .filter((item) => directorFilter !== "all" || wasaFilter !== "all" || item.demand || item.collection)
     .sort((a, b) => b.collection - a.collection)
-    .slice(0, 8), [data.wasas, currentReports, wasaFilter]);
+    .slice(0, directorFilter !== "all" || wasaFilter !== "all" ? data.wasas.length : 8), [data.wasas, currentReports, assignments, directorFilter, wasaFilter]);
 
   const targetComparison = useMemo(() => data.targets
     .filter((target) => target.period_year === year
       && (target.period_type === "annual" || target.period_month === month)
-      && (!target.director_id || directorFilter === "all" || target.director_id === directorFilter)
-      && (!target.wasa_id || wasaFilter === "all" || target.wasa_id === wasaFilter))
+      && (wasaFilter !== "all"
+        ? target.wasa_id === wasaFilter
+        : directorFilter !== "all"
+          ? target.director_id === directorFilter
+            || Boolean(target.wasa_id && assignments.some((item) => item.director_id === directorFilter && item.wasa_id === target.wasa_id))
+          : true))
     .map((target) => {
       const rows = trendReports.filter((report) =>
         (target.period_type === "annual" ? report.report_month <= month : report.report_month === month)
@@ -492,12 +502,12 @@ function App() {
       }
       const entityName = target.director_id ? directorName(target.director_id) : wasaName(target.wasa_id!);
       return {
-        label: `${entityName.split(" ").slice(-1)[0]} · ${target.period_type} · ${metrics.find(([key]) => key === target.metric)?.[1] ?? target.metric}`,
+        label: `${entityName.replace(/ WASA$/, "")} · ${target.period_type} · ${metrics.find(([key]) => key === target.metric)?.[1] ?? target.metric}`,
         target: 100,
         actual: target.target_value ? Math.round(actual / Number(target.target_value) * 100) : 0,
       };
     })
-    .slice(0, 8), [data.targets, data.visits, trendReports, year, month, directorFilter, wasaFilter, directorName, wasaName]);
+    .slice(0, 8), [data.targets, data.visits, trendReports, assignments, year, month, directorFilter, wasaFilter, directorName, wasaName]);
 
   const totals = useMemo(() => ({
     demand: currentReports.reduce((sum, item) => sum + numberValue(item.monthly_demand), 0),
@@ -597,7 +607,20 @@ function App() {
   };
 
   const saveReport = async (values: Record<string, string>, action: "draft" | "submit") => {
-    if (!supabase || !profile?.director_id || !sessionUser) return false;
+    setError("");
+    if (!supabase || !sessionUser) {
+      setError("A signed-in Supabase session is required to save this report.");
+      return false;
+    }
+    if (!isAdmin && !profile?.director_id) {
+      setError("A Director account is required to save this report.");
+      return false;
+    }
+    const reportDirectorId = isAdmin ? values.director_id : profile?.director_id;
+    if (!reportDirectorId) {
+      setError("Select the Director responsible for this report.");
+      return false;
+    }
     const fields = [
       "monthly_demand", "monthly_collection", "opening_arrears", "additional_arrears",
       "arrears_recovered", "approved_adjustments", "opening_surveys", "new_surveys",
@@ -619,7 +642,7 @@ function App() {
     const row = {
       ...numericFields,
       wasa_id: existing?.wasa_id ?? values.wasa_id,
-      director_id: profile.director_id,
+      director_id: existing?.director_id ?? reportDirectorId,
       report_year: existing?.report_year ?? Number(values.report_year),
       report_month: existing?.report_month ?? Number(values.report_month),
       status: action === "submit" ? "submitted" : "draft",
@@ -643,7 +666,20 @@ function App() {
   };
 
   const saveVisit = async (values: Record<string, string>, attachment: File | null) => {
-    if (!supabase || !profile?.director_id || !sessionUser) return;
+    setError("");
+    if (!supabase || !sessionUser) {
+      setError("A signed-in Supabase session is required to save this field visit.");
+      return;
+    }
+    if (!isAdmin && !profile?.director_id) {
+      setError("A Director account is required to save this field visit.");
+      return;
+    }
+    const visitDirectorId = isAdmin ? values.director_id : profile?.director_id;
+    if (!visitDirectorId) {
+      setError("Select the Director responsible for this field visit.");
+      return;
+    }
     let attachmentPath: string | null = null;
     if (attachment) {
       const allowedTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
@@ -662,7 +698,7 @@ function App() {
       }
     }
     const { error: saveError } = await supabase.from("field_visits").insert({
-      director_id: profile.director_id,
+      director_id: visitDirectorId,
       wasa_id: values.wasa_id,
       visit_date: values.visit_date,
       location: values.location.trim(),
@@ -835,30 +871,39 @@ function App() {
   };
 
   const saveWasa = async (values: Record<string, string>) => {
-    if (!supabase) return;
+    if (!supabase) return { ok: false, message: "Supabase is not configured." };
+    setError("");
     const { error: saveError } = await supabase.from("wasas").insert({
       name: values.name.trim(),
       code: values.code.trim() || null,
     });
-    if (saveError) setError(saveError.message);
+    if (saveError) {
+      setError(saveError.message);
+      return { ok: false, message: saveError.message };
+    }
     else {
       setWasaEditor(false);
       setNotice("WASA added.");
       await loadData();
+      return { ok: true, message: "" };
     }
   };
 
   const assignWasa = async (values: Record<string, string>) => {
-    if (!supabase) return;
+    if (!supabase) return { ok: false, message: "Supabase is not configured." };
     const { error: assignError } = await supabase.rpc("admin_assign_wasa", {
       target_director_id: values.director_id,
       target_wasa_id: values.wasa_id,
       assignment_date: values.valid_from,
     });
-    if (assignError) setError(assignError.message);
+    if (assignError) {
+      setError(assignError.message);
+      return { ok: false, message: assignError.message };
+    }
     else {
       setNotice("WASA assignment updated.");
       await loadData();
+      return { ok: true, message: "" };
     }
   };
 
@@ -989,7 +1034,7 @@ function App() {
               wasas={availableWasas}
               selectedDirector={directorFilter}
               selectedWasa={wasaFilter}
-              setDirector={setDirectorFilter}
+              setDirector={changeDirectorFilter}
               setWasa={setWasaFilter}
               totals={totals}
               reportCount={currentReports.length}
@@ -1000,8 +1045,8 @@ function App() {
               targetComparison={targetComparison}
               directorPerformance={directorPerformance}
               wasaPerformance={wasaPerformance}
-              visits={data.visits}
-              reports={data.reports}
+              visits={currentVisits}
+              reports={allCurrentReports}
               assignments={assignments}
               wasaName={wasaName}
               directorName={directorName}
@@ -1022,7 +1067,7 @@ function App() {
               setSearch={setSearch}
               selectedDirector={directorFilter}
               selectedWasa={wasaFilter}
-              setDirector={setDirectorFilter}
+              setDirector={changeDirectorFilter}
               setWasa={setWasaFilter}
               wasaName={wasaName}
               directorName={directorName}
@@ -1043,7 +1088,7 @@ function App() {
               wasas={availableWasas}
               selectedDirector={directorFilter}
               selectedWasa={wasaFilter}
-              setDirector={setDirectorFilter}
+              setDirector={changeDirectorFilter}
               setWasa={setWasaFilter}
               wasaName={wasaName}
               directorName={directorName}
@@ -1102,13 +1147,27 @@ function App() {
         <ReportEditor
           report={reportEditor === "new" ? null : reportEditor}
           wasas={availableWasas}
+          directors={isAdmin ? data.directors.filter((item) => item.is_active) : availableDirectors}
+          isAdmin={isAdmin}
+          error={error}
+          selectedDirector={directorFilter}
+          selectedWasa={wasaFilter}
           month={month}
           year={year}
           onClose={() => setReportEditor(null)}
           onSave={saveReport}
         />
       )}
-      {visitEditor && <VisitEditor wasas={availableWasas} onClose={() => setVisitEditor(false)} onSave={saveVisit} />}
+      {visitEditor && <VisitEditor
+        wasas={availableWasas}
+        directors={isAdmin ? data.directors.filter((item) => item.is_active) : availableDirectors}
+        isAdmin={isAdmin}
+        error={error}
+        selectedDirector={directorFilter}
+        selectedWasa={wasaFilter}
+        onClose={() => setVisitEditor(false)}
+        onSave={saveVisit}
+      />}
       {targetEditor && <TargetEditor
         directors={data.directors.filter((item) => item.is_active)}
         wasas={data.wasas.filter((item) => item.is_active)}
@@ -1292,9 +1351,17 @@ function OverviewPage(props: {
   const recentVisits = props.visits.slice(0, 5);
   const currentRecovery = props.totals.recovery;
   const pendingSubmissions = props.reports.filter((item) => item.status === "submitted").length;
-  const activeWasaCount = props.isAdmin
-    ? props.wasas.length
-    : props.assignments.filter((item) => item.director_id === props.profile.director_id).length;
+  const hasDashboardFilter = props.selectedDirector !== "all" || props.selectedWasa !== "all";
+  const visibleWasas = props.selectedDirector === "all"
+    ? props.wasas
+    : props.wasas.filter((wasa) => props.assignments.some((assignment) =>
+      assignment.director_id === props.selectedDirector && assignment.wasa_id === wasa.id));
+  const activeWasaCount = props.selectedWasa !== "all" ? 1 : visibleWasas.length;
+  const selectedWasa = props.wasas.find((wasa) => wasa.id === props.selectedWasa);
+  const selectedDirector = props.directors.find((director) => director.id === props.selectedDirector);
+  const scopeTitle = selectedWasa
+    ? `${selectedWasa.name} progress`
+    : selectedDirector ? `${selectedDirector.full_name} · WASA progress` : "Director comparison";
   return (
     <>
       <PageHeading
@@ -1304,16 +1371,18 @@ function OverviewPage(props: {
         actions={<><button className="secondary-btn" onClick={props.onNewVisit}><MapPinned size={16} /> Log field visit</button><button className="primary-btn" onClick={props.onNewReport}><Plus size={17} /> New monthly report</button></>}
       />
       <div className="filters-bar">
-        <div className="filters-intro"><span className="filter-icon"><Settings2 size={16} /></span><div><strong>Dashboard filters</strong><small>Refine your reporting view</small></div></div>
+        <div className="filters-intro"><span className="filter-icon"><Settings2 size={16} /></span><div><strong>Dashboard filters</strong><small>{selectedWasa?.name ?? selectedDirector?.full_name ?? "Showing all performance"}</small></div></div>
         <label>Director<select value={props.selectedDirector} onChange={(event) => props.setDirector(event.target.value)}><option value="all">{props.isAdmin ? "All Directors" : "My performance"}</option>{props.directors.map((director) => <option key={director.id} value={director.id}>{director.full_name}</option>)}</select></label>
-        <label>WASA<select value={props.selectedWasa} onChange={(event) => props.setWasa(event.target.value)}><option value="all">All assigned WASAs</option>{props.wasas.map((wasa) => <option key={wasa.id} value={wasa.id}>{wasa.name}</option>)}</select></label>
+        <label>WASA<select value={props.selectedWasa} onChange={(event) => props.setWasa(event.target.value)}><option value="all">{selectedDirector || !props.isAdmin ? "All assigned WASAs" : "All WASAs"}</option>{visibleWasas.map((wasa) => <option key={wasa.id} value={wasa.id}>{wasa.name}</option>)}</select></label>
+        {hasDashboardFilter && <button className="secondary-btn compact-btn" onClick={() => { props.setDirector("all"); props.setWasa("all"); }}>Clear filters</button>}
         <div className="filter-period"><CalendarDays size={15} />{monthLabel}</div>
       </div>
       <div className="kpi-grid">
-        {props.isAdmin && <>
+        {props.isAdmin && !hasDashboardFilter && <>
           <KpiCard label="Total Directors" value={props.directors.filter((item) => item.is_active).length} sub="Active accounts" icon={<Users />} tone="navy" />
           <KpiCard label="Total WASAs" value={props.wasas.length} sub="Active WASAs" icon={<Building2 />} tone="blue" />
         </>}
+        {props.isAdmin && hasDashboardFilter && <KpiCard label="WASAs in view" value={activeWasaCount} sub={selectedWasa?.name ?? selectedDirector?.full_name ?? "Selected scope"} icon={<Building2 />} tone="blue" />}
         {!props.isAdmin && <KpiCard label="Assigned WASAs" value={activeWasaCount} sub="Current assignments" icon={<Building2 />} tone="blue" />}
         <KpiCard label="Field visits" value={props.visitCount} sub={`${monthLabel}`} icon={<MapPinned />} tone="green" />
         <KpiCard label="Revenue demand" value={money(props.totals.demand)} sub={`${props.reportCount} submitted reports`} icon={<CircleDollarSign />} tone="navy" compact />
@@ -1335,6 +1404,8 @@ function OverviewPage(props: {
           directorPerformance={props.directorPerformance}
           wasaPerformance={props.wasaPerformance}
           targetComparison={props.targetComparison}
+          showWasaScope={hasDashboardFilter}
+          scopeTitle={scopeTitle}
           pendingCount={props.pendingCount}
           pendingSubmissions={pendingSubmissions}
           reportCount={props.reportCount}
@@ -1545,7 +1616,7 @@ function TargetsPage(props: {
 
 function TeamPage(props: {
   directors: Director[]; wasas: Wasa[]; assignments: Assignment[];
-  onNewDirector: () => void; onNewWasa: () => void; onAssign: (values: Record<string, string>) => void;
+  onNewDirector: () => void; onNewWasa: () => void; onAssign: (values: Record<string, string>) => Promise<{ ok: boolean; message: string }>;
   onUpdateDirector: (director: Director, fullName: string, active: boolean) => void;
   onToggleWasa: (wasa: Wasa) => void;
 }) {
@@ -1553,17 +1624,31 @@ function TeamPage(props: {
   const [editName, setEditName] = useState("");
   const [assignmentForm, setAssignmentForm] = useState(false);
   const [assignmentDirector, setAssignmentDirector] = useState("");
+  const [assignmentBusy, setAssignmentBusy] = useState(false);
+  const [assignmentError, setAssignmentError] = useState("");
   const openAssignments = (wasaId: string) => props.assignments.find((item) => item.wasa_id === wasaId && !item.valid_to);
   const startAssignment = (directorId = "") => {
     setAssignmentDirector(directorId);
     setAssignmentForm(true);
   };
-  const submitAssign = (event: FormEvent<HTMLFormElement>) => {
+  const submitAssign = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget).entries());
-    props.onAssign(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value)])));
-    setAssignmentForm(false);
-    setAssignmentDirector("");
+    setAssignmentBusy(true);
+    setAssignmentError("");
+    try {
+      const result = await props.onAssign(Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value)])));
+      if (result.ok) {
+        setAssignmentForm(false);
+        setAssignmentDirector("");
+      } else {
+        setAssignmentError(result.message);
+      }
+    } catch (saveFailure) {
+      setAssignmentError(messageFor(saveFailure));
+    } finally {
+      setAssignmentBusy(false);
+    }
   };
   return <>
     <PageHeading eyebrow="ADMINISTRATION" title="Directors & WASAs" description="Invite Directors and assign each one to the districts (WASAs) they manage." actions={<><button className="secondary-btn" onClick={props.onNewWasa}><Plus size={16} /> Add WASA</button><button className="primary-btn" onClick={props.onNewDirector}><Users size={16} /> Invite Director</button></>} />
@@ -1581,10 +1666,11 @@ function TeamPage(props: {
         </tbody></table></div>
       </div>
       <div className="panel data-panel"><div className="table-toolbar"><div><h3>District / WASA directory</h3><p>Assign a district to a Director or maintain its status</p></div><button className="secondary-btn compact-btn" onClick={() => assignmentForm ? setAssignmentForm(false) : startAssignment()}><MapPinned size={15} /> Assign district</button></div>
-        {assignmentForm && <form className="inline-assignment-form" onSubmit={submitAssign}>
+        {assignmentForm && <form className="inline-assignment-form" onSubmit={(event) => void submitAssign(event)}>
           <label>Director<select name="director_id" required value={assignmentDirector} onChange={(event) => setAssignmentDirector(event.target.value)}><option value="" disabled>Select Director</option>{props.directors.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.full_name}</option>)}</select></label>
           <label>District / WASA<select name="wasa_id" required defaultValue=""><option value="" disabled>Select district / WASA</option>{props.wasas.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          <label>Effective date<input name="valid_from" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label><button className="primary-btn compact-btn">Save assignment</button>
+          <label>Effective date<input name="valid_from" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label><button className="primary-btn compact-btn" disabled={assignmentBusy}>{assignmentBusy ? "Saving…" : "Save assignment"}</button>
+          {assignmentError && <div className="form-note target-save-note is-error" role="alert"><AlertCircle size={15} /><span>{assignmentError}</span></div>}
         </form>}
         <div className="table-wrap"><table><thead><tr><th>DISTRICT / WASA</th><th>ASSIGNED DIRECTOR</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
           {props.wasas.length ? props.wasas.map((wasa) => {
@@ -1632,13 +1718,16 @@ function Modal({ title, description, onClose, children, wide = false }: { title:
   </div>;
 }
 
-function ReportEditor({ report, wasas, month, year, onClose, onSave }: {
-  report: MonthlyReport | null; wasas: Wasa[]; month: number; year: number; onClose: () => void;
+function ReportEditor({ report, wasas, directors, isAdmin, error, selectedDirector, selectedWasa, month, year, onClose, onSave }: {
+  report: MonthlyReport | null; wasas: Wasa[]; directors: Director[]; isAdmin: boolean;
+  error: string; selectedDirector: string; selectedWasa: string; month: number; year: number; onClose: () => void;
   onSave: (values: Record<string, string>, action: "draft" | "submit") => Promise<boolean>;
 }) {
   const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const initial: Record<string, string> = {
-    wasa_id: report?.wasa_id ?? wasas[0]?.id ?? "",
+    wasa_id: report?.wasa_id ?? (selectedWasa !== "all" ? selectedWasa : wasas[0]?.id) ?? "",
+    director_id: report?.director_id ?? (selectedDirector !== "all" ? selectedDirector : directors[0]?.id) ?? "",
     report_month: String(report?.report_month ?? month),
     report_year: String(report?.report_year ?? year),
     monthly_demand: String(report?.monthly_demand ?? 0),
@@ -1668,18 +1757,31 @@ function ReportEditor({ report, wasas, month, year, onClose, onSave }: {
   const formSubmit = async (event: FormEvent<HTMLFormElement>, action: "draft" | "submit") => {
     event.preventDefault();
     setBusy(true);
-    await onSave(values, action);
-    setBusy(false);
+    setSaveError("");
+    try {
+      await onSave(values, action);
+    } catch (saveFailure) {
+      setSaveError(messageFor(saveFailure));
+    } finally {
+      setBusy(false);
+    }
   };
   const saveDraft = async () => {
     setBusy(true);
-    await onSave(values, "draft");
-    setBusy(false);
+    setSaveError("");
+    try {
+      await onSave(values, "draft");
+    } catch (saveFailure) {
+      setSaveError(messageFor(saveFailure));
+    } finally {
+      setBusy(false);
+    }
   };
   return <Modal title={report ? "Edit monthly report" : "New monthly WASA report"} description={report ? "Update a draft or returned report, then resubmit it for review." : "Enter this WASA’s monthly results. Balances and recovery are calculated automatically."} onClose={onClose} wide>
     {report && <div className="return-comment"><AlertCircle size={15} /><span>{report.status === "returned" ? report.review_comment || "This report was returned for correction." : "Draft report"}</span></div>}
     <form className="form-body" onSubmit={(event) => void formSubmit(event, "submit")}>
       <div className="form-grid three">
+        {isAdmin && <Field label="Director responsible" required><select value={values.director_id} disabled={Boolean(report)} required onChange={(event) => update("director_id", event.target.value)}>{directors.map((director) => <option key={director.id} value={director.id}>{director.full_name}</option>)}</select></Field>}
         <Field label="WASA" required><select value={values.wasa_id} disabled={Boolean(report)} required onChange={(event) => update("wasa_id", event.target.value)}>{wasas.map((wasa) => <option key={wasa.id} value={wasa.id}>{wasa.name}</option>)}</select></Field>
         <Field label="Reporting month"><select disabled={Boolean(report)} value={values.report_month} onChange={(event) => update("report_month", event.target.value)}>{monthNames.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}</select></Field>
         <Field label="Reporting year"><input type="number" min="2000" max="2200" disabled={Boolean(report)} value={values.report_year} onChange={(event) => update("report_year", event.target.value)} /></Field>
@@ -1716,7 +1818,8 @@ function ReportEditor({ report, wasas, month, year, onClose, onSave }: {
           <ConnectionFields title="Sewerage connections" prefix="sewer" values={values} update={update} />
         </div>
       </FormSection>
-      <div className="modal-actions"><button type="button" className="secondary-btn" onClick={onClose}>Cancel</button><button type="button" className="secondary-btn" disabled={busy} onClick={() => void saveDraft()}>Save draft</button><button className="primary-btn" disabled={busy}>{busy ? "Saving…" : "Submit for review"}<Check size={16} /></button></div>
+      {(error || saveError) && <div className="form-note target-save-note is-error" role="alert"><AlertCircle size={15} /><span>{saveError || error}</span></div>}
+      <div className="modal-actions"><button type="button" className="secondary-btn" disabled={busy} onClick={onClose}>Cancel</button><button type="button" className="secondary-btn" disabled={busy} onClick={() => void saveDraft()}>Save draft</button><button className="primary-btn" disabled={busy}>{busy ? "Saving…" : "Submit for review"}<Check size={16} /></button></div>
     </form>
   </Modal>;
 }
@@ -1735,24 +1838,35 @@ function ConnectionFields({ title, prefix, values, update }: { title: string; pr
   </div><div className="connection-result"><span>Closing</span><strong>{(opening + added - removed).toLocaleString()}</strong><span>Net change <b>{added - removed >= 0 ? "+" : ""}{(added - removed).toLocaleString()}</b></span></div></div>;
 }
 
-function VisitEditor({ wasas, onClose, onSave }: { wasas: Wasa[]; onClose: () => void; onSave: (values: Record<string, string>, attachment: File | null) => Promise<void> }) {
+function VisitEditor({ wasas, directors, isAdmin, error, selectedDirector, selectedWasa, onClose, onSave }: {
+  wasas: Wasa[]; directors: Director[]; isAdmin: boolean; error: string; selectedDirector: string; selectedWasa: string;
+  onClose: () => void; onSave: (values: Record<string, string>, attachment: File | null) => Promise<void>;
+}) {
   const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
-    const formData = new FormData(event.currentTarget);
-    const attachmentValue = formData.get("attachment");
-    const attachment = attachmentValue instanceof File && attachmentValue.size ? attachmentValue : null;
-    formData.delete("attachment");
-    const entries = Object.fromEntries(formData.entries());
-    await onSave(Object.fromEntries(Object.entries(entries).map(([key, value]) => [key, String(value)])), attachment);
-    setBusy(false);
+    setSaveError("");
+    try {
+      const formData = new FormData(event.currentTarget);
+      const attachmentValue = formData.get("attachment");
+      const attachment = attachmentValue instanceof File && attachmentValue.size ? attachmentValue : null;
+      formData.delete("attachment");
+      const entries = Object.fromEntries(formData.entries());
+      await onSave(Object.fromEntries(Object.entries(entries).map(([key, value]) => [key, String(value)])), attachment);
+    } catch (saveFailure) {
+      setSaveError(messageFor(saveFailure));
+    } finally {
+      setBusy(false);
+    }
   };
   return <Modal title="Record a field visit" description="Capture the activity, findings, progress and follow-up actions." onClose={onClose} wide>
     <form className="form-body" onSubmit={(event) => void submit(event)}>
       <div className="form-grid three">
         <Field label="Visit date" required><input type="date" name="visit_date" required defaultValue={new Date().toISOString().slice(0, 10)} /></Field>
-        <Field label="WASA visited" required><select name="wasa_id" required defaultValue={wasas[0]?.id ?? ""}>{wasas.map((wasa) => <option key={wasa.id} value={wasa.id}>{wasa.name}</option>)}</select></Field>
+        {isAdmin && <Field label="Director responsible" required><select name="director_id" required defaultValue={selectedDirector !== "all" ? selectedDirector : directors[0]?.id ?? ""}>{directors.map((director) => <option key={director.id} value={director.id}>{director.full_name}</option>)}</select></Field>}
+        <Field label="WASA visited" required><select name="wasa_id" required defaultValue={selectedWasa !== "all" ? selectedWasa : wasas[0]?.id ?? ""}>{wasas.map((wasa) => <option key={wasa.id} value={wasa.id}>{wasa.name}</option>)}</select></Field>
         <Field label="Location / area" required><input name="location" required placeholder="Area, zone or facility" /></Field>
         <Field label="Purpose of visit" required><input name="purpose" required placeholder="Purpose" /></Field>
         <Field label="Responsible officer"><input name="responsible_officer" placeholder="Officer name / designation" /></Field>
@@ -1768,7 +1882,8 @@ function VisitEditor({ wasas, onClose, onSave }: { wasas: Wasa[]; onClose: () =>
       <Field label="Remarks"><textarea name="remarks" rows={2} /></Field>
       <Field label="Supporting photo or document (optional)"><input type="file" name="attachment" accept="image/jpeg,image/png,image/webp,application/pdf" /></Field>
       <div className="form-note"><ShieldCheck size={15} /> Your identity and submission timestamp are recorded automatically.</div>
-      <div className="modal-actions"><button type="button" className="secondary-btn" onClick={onClose}>Cancel</button><button className="primary-btn" disabled={busy}>{busy ? "Saving…" : "Save field visit"}<Check size={16} /></button></div>
+      {(error || saveError) && <div className="form-note target-save-note is-error" role="alert"><AlertCircle size={15} /><span>{saveError || error}</span></div>}
+      <div className="modal-actions"><button type="button" className="secondary-btn" disabled={busy} onClick={onClose}>Cancel</button><button className="primary-btn" disabled={busy}>{busy ? "Saving…" : "Save field visit"}<Check size={16} /></button></div>
     </form>
   </Modal>;
 }
@@ -1890,6 +2005,8 @@ function DirectorEditor({ onClose, onSave }: { onClose: () => void; onSave: (val
     try {
       const response = await onSave(Object.fromEntries(Object.entries(entries).map(([key, value]) => [key, String(value)])));
       setResult(response);
+    } catch (saveFailure) {
+      setResult({ ok: false, message: messageFor(saveFailure) });
     } finally {
       setBusy(false);
     }
@@ -1910,17 +2027,32 @@ function DirectorEditor({ onClose, onSave }: { onClose: () => void; onSave: (val
   </Modal>;
 }
 
-function WasaEditor({ onClose, onSave }: { onClose: () => void; onSave: (values: Record<string, string>) => Promise<void> }) {
+function WasaEditor({ onClose, onSave }: {
+  onClose: () => void;
+  onSave: (values: Record<string, string>) => Promise<{ ok: boolean; message: string }>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const entries = Object.fromEntries(new FormData(event.currentTarget).entries());
-    await onSave(Object.fromEntries(Object.entries(entries).map(([key, value]) => [key, String(value)])));
+    setBusy(true);
+    setSaveError("");
+    try {
+      const result = await onSave(Object.fromEntries(Object.entries(entries).map(([key, value]) => [key, String(value)])));
+      if (!result.ok) setSaveError(result.message);
+    } catch (saveFailure) {
+      setSaveError(messageFor(saveFailure));
+    } finally {
+      setBusy(false);
+    }
   };
   return <Modal title="Add a WASA" description="Create an organization record, then assign it to a Director." onClose={onClose}>
     <form className="form-body" onSubmit={(event) => void submit(event)}>
       <Field label="WASA name" required><input name="name" required placeholder="Enter official WASA name" /></Field>
       <Field label="WASA code (optional)"><input name="code" placeholder="Unique short code" /></Field>
-      <div className="modal-actions"><button type="button" className="secondary-btn" onClick={onClose}>Cancel</button><button className="primary-btn">Add WASA</button></div>
+      {saveError && <div className="form-note target-save-note is-error" role="alert"><AlertCircle size={15} /><span>{saveError}</span></div>}
+      <div className="modal-actions"><button type="button" className="secondary-btn" disabled={busy} onClick={onClose}>Cancel</button><button className="primary-btn" disabled={busy}>{busy ? "Saving…" : "Add WASA"}</button></div>
     </form>
   </Modal>;
 }
