@@ -2,8 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import {
   Activity, ArrowDownToLine, BarChart3, Bell, Building2, CalendarDays, Check,
   ChevronDown, CircleDollarSign, ClipboardCheck, FileBarChart2, FileSpreadsheet,
-  Droplets, LayoutDashboard, LogOut, Menu, Plus, Search, Settings2, ShieldCheck,
-  Target, Users, Waves, X, MapPinned, RefreshCw, LockKeyhole, AlertCircle,
+  Droplets, LayoutDashboard, LogOut, Menu, Pencil, Plus, Search, Settings2, ShieldCheck,
+  Target, Trash2, Users, Waves, X, MapPinned, RefreshCw, LockKeyhole, AlertCircle,
   Paperclip,
 } from "lucide-react";
 import { createWorkbook } from "./lib/workbook";
@@ -295,7 +295,7 @@ function App() {
   const [visitEditor, setVisitEditor] = useState(false);
   const [targetEditor, setTargetEditor] = useState(false);
   const [managerEditor, setManagerEditor] = useState(false);
-  const [wasaEditor, setWasaEditor] = useState(false);
+  const [wasaEditor, setWasaEditor] = useState<Wasa | "new" | null>(null);
 
   const loadData = useCallback(async () => {
     if (!supabase || !sessionUser) return;
@@ -874,20 +874,33 @@ function App() {
   const saveWasa = async (values: Record<string, string>) => {
     if (!supabase) return { ok: false, message: "Supabase is not configured." };
     setError("");
-    const { error: saveError } = await supabase.from("wasas").insert({
-      name: values.name.trim(),
-      code: values.code.trim() || null,
-    });
+    const editingWasa = wasaEditor && wasaEditor !== "new" ? wasaEditor : null;
+    const name = values.name.trim();
+    const code = values.code.trim() || null;
+    const isActive = editingWasa ? (values.is_active === "on" || values.is_active === "true") : true;
+    const { error: saveError } = editingWasa
+      ? await supabase.from("wasas").update({ name, code, is_active: isActive }).eq("id", editingWasa.id)
+      : await supabase.from("wasas").insert({ name, code, is_active: true });
     if (saveError) {
       setError(saveError.message);
       return { ok: false, message: saveError.message };
     }
-    else {
-      setWasaEditor(false);
-      setNotice("WASA added.");
-      await loadData();
-      return { ok: true, message: "" };
-    }
+    setWasaEditor(null);
+    setNotice(editingWasa ? "WASA updated." : "WASA added.");
+    await loadData();
+    return { ok: true, message: "" };
+  };
+
+  const deleteWasa = async (wasa: Wasa) => {
+    if (!supabase) return;
+    if (!window.confirm(`Delete ${wasa.name}? This cannot be undone and may fail if the WASA has linked records.`)) return;
+    await runAction(async () => await supabase!.from("wasas").delete().eq("id", wasa.id), "WASA deleted.");
+  };
+
+  const deleteDirector = async (director: Director) => {
+    if (!supabase) return;
+    if (!window.confirm(`Delete ${director.full_name}? This cannot be undone and may fail if the Director has linked records or an account.`)) return;
+    await runAction(async () => await supabase!.from("directors").delete().eq("id", director.id), "Director deleted.");
   };
 
   const assignWasa = async (values: Record<string, string>) => {
@@ -1122,13 +1135,17 @@ function App() {
               wasas={data.wasas}
               assignments={assignments}
               onNewDirector={() => setManagerEditor(true)}
-              onNewWasa={() => setWasaEditor(true)}
+              onNewWasa={() => setWasaEditor("new")}
+              onEditWasa={(wasa) => setWasaEditor(wasa)}
               onAssign={assignWasa}
               onUpdateDirector={updateDirector}
+              onToggleDirector={(director) => { void updateDirector(director, director.full_name, !director.is_active); }}
+              onDeleteDirector={deleteDirector}
               onToggleWasa={async (wasa) => {
                 if (!supabase) return;
                 await runAction(async () => await supabase!.from("wasas").update({ is_active: !wasa.is_active }).eq("id", wasa.id), wasa.is_active ? "WASA deactivated." : "WASA activated.");
               }}
+              onDeleteWasa={deleteWasa}
             />
           )}
           {page === "exports" && (
@@ -1183,7 +1200,7 @@ function App() {
         onSave={saveTarget}
       />}
       {managerEditor && <DirectorEditor onClose={() => setManagerEditor(false)} onSave={createDirector} />}
-      {wasaEditor && <WasaEditor onClose={() => setWasaEditor(false)} onSave={saveWasa} />}
+      {wasaEditor && <WasaEditor wasa={wasaEditor !== "new" ? wasaEditor : null} onClose={() => setWasaEditor(null)} onSave={saveWasa} />}
     </div>
   );
 }
@@ -1621,9 +1638,9 @@ function TargetsPage(props: {
 
 function TeamPage(props: {
   directors: Director[]; wasas: Wasa[]; assignments: Assignment[];
-  onNewDirector: () => void; onNewWasa: () => void; onAssign: (values: Record<string, string>) => Promise<{ ok: boolean; message: string }>;
-  onUpdateDirector: (director: Director, fullName: string, active: boolean) => void;
-  onToggleWasa: (wasa: Wasa) => void;
+  onNewDirector: () => void; onNewWasa: () => void; onEditWasa: (wasa: Wasa) => void; onAssign: (values: Record<string, string>) => Promise<{ ok: boolean; message: string }>;
+  onUpdateDirector: (director: Director, fullName: string, active: boolean) => void; onToggleDirector: (director: Director) => void; onDeleteDirector: (director: Director) => void;
+  onToggleWasa: (wasa: Wasa) => void; onDeleteWasa: (wasa: Wasa) => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -1676,7 +1693,7 @@ function TeamPage(props: {
     return matchesQuery && matchesAssignment;
   });
   return <>
-    <PageHeading eyebrow="ADMINISTRATION" title="Directors & WASAs" description="Invite Directors and assign each one to the districts (WASAs) they manage." actions={<><button className="secondary-btn" onClick={props.onNewWasa}><Plus size={16} /> Add WASA</button><button className="primary-btn" onClick={props.onNewDirector}><Users size={16} /> Invite Director</button></>} />
+    <PageHeading eyebrow="ADMINISTRATION" title="Directors & WASAs" description="Invite Directors, assign districts, and manage Director and WASA records." actions={<><button className="secondary-btn" onClick={props.onNewWasa}><Plus size={16} /> Add WASA</button><button className="primary-btn" onClick={props.onNewDirector}><Users size={16} /> Invite Director</button></>} />
     <div className="stats-strip"><div><span>Active Directors</span><strong>{props.directors.filter((item) => item.is_active).length}</strong></div><div><span>Active WASAs</span><strong>{props.wasas.filter((item) => item.is_active).length}</strong></div><div><span>Current assignments</span><strong>{props.assignments.length}</strong></div><div><span>Unassigned WASAs</span><strong>{props.wasas.filter((item) => item.is_active && !openAssignments(item.id)).length}</strong></div></div>
     <div className="team-grid">
       <div className="panel data-panel"><div className="table-toolbar"><div><h3>Director accounts</h3><p>{visibleDirectors.length} of {props.directors.length} Directors shown</p></div><div className="toolbar-actions"><label className="search-field"><Search size={16} /><input placeholder="Search Directors…" value={directorQuery} onChange={(event) => setDirectorQuery(event.target.value)} /></label></div></div>
@@ -1686,7 +1703,7 @@ function TeamPage(props: {
               .filter((item) => item.director_id === director.id)
               .map((item) => props.wasas.find((wasa) => wasa.id === item.wasa_id)?.name)
               .filter((name): name is string => Boolean(name));
-            return <tr key={director.id}><td>{editing === director.id ? <input className="inline-input" value={editName} onChange={(event) => setEditName(event.target.value)} /> : <strong>{director.full_name}</strong>}</td><td>{director.email}</td><td>{assignedDistricts.length ? assignedDistricts.join(", ") : "Not assigned"}</td><td><span className={`badge ${director.is_active ? "badge-approved" : "badge-draft"}`}>{director.is_active ? "Active" : "Inactive"}</span></td><td><div className="row-actions">{editing === director.id ? <><button className="small-action approve" aria-label={`Save ${director.full_name}`} onClick={() => { props.onUpdateDirector(director, editName, director.is_active); setEditing(null); }}><Check size={15} /></button><button className="small-action return" aria-label="Cancel name edit" onClick={() => setEditing(null)}><X size={15} /></button></> : <><button className="small-action edit" aria-label={`Assign district to ${director.full_name}`} title="Assign district" onClick={() => startAssignment(director.id)}><MapPinned size={15} /></button><button className="small-action edit" aria-label={`Edit ${director.full_name}`} title="Edit Director name" onClick={() => { setEditing(director.id); setEditName(director.full_name); }}><Settings2 size={15} /></button></>}</div></td></tr>;
+            return <tr key={director.id}><td>{editing === director.id ? <input className="inline-input" value={editName} onChange={(event) => setEditName(event.target.value)} /> : <strong>{director.full_name}</strong>}</td><td>{director.email}</td><td>{assignedDistricts.length ? assignedDistricts.join(", ") : "Not assigned"}</td><td><span className={`badge ${director.is_active ? "badge-approved" : "badge-draft"}`}>{director.is_active ? "Active" : "Inactive"}</span></td><td><div className="row-actions">{editing === director.id ? <><button className="small-action approve" aria-label={`Save ${director.full_name}`} onClick={() => { props.onUpdateDirector(director, editName, director.is_active); setEditing(null); }}><Check size={15} /></button><button className="small-action return" aria-label="Cancel name edit" onClick={() => setEditing(null)}><X size={15} /></button></> : <><button className="small-action edit" aria-label={`Assign district to ${director.full_name}`} title="Assign district" onClick={() => startAssignment(director.id)}><MapPinned size={15} /></button><button className="small-action edit" aria-label={`Edit ${director.full_name}`} title="Edit Director name" onClick={() => { setEditing(director.id); setEditName(director.full_name); }}><Pencil size={15} /></button><button className="small-action edit" aria-label={director.is_active ? `Deactivate ${director.full_name}` : `Activate ${director.full_name}`} title={director.is_active ? "Deactivate Director" : "Activate Director"} onClick={() => props.onToggleDirector(director)}>{director.is_active ? <X size={15} /> : <Check size={15} />}</button><button className="small-action return" aria-label={`Delete ${director.full_name}`} title="Delete Director" onClick={() => props.onDeleteDirector(director)}><Trash2 size={15} /></button></>}</div></td></tr>;
           }) : <EmptyRow colSpan={5} text={props.directors.length ? "No Directors match the current search." : "No Directors added yet."} />}
         </tbody></table></div>
       </div>
@@ -1700,15 +1717,14 @@ function TeamPage(props: {
         <div className="table-wrap"><table><thead><tr><th>DISTRICT / WASA</th><th>ASSIGNED DIRECTOR</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
           {visibleWasas.length ? visibleWasas.map((wasa) => {
             const assignment = openAssignments(wasa.id);
-            return <tr key={wasa.id}><td><strong>{wasa.name}</strong><small>{wasa.code || "No code"}</small></td><td>{assignment ? props.directors.find((item) => item.id === assignment.director_id)?.full_name ?? "Unassigned" : "Unassigned"}</td><td><span className={`badge ${wasa.is_active ? "badge-approved" : "badge-draft"}`}>{wasa.is_active ? "Active" : "Inactive"}</span></td><td><button className="small-action edit" title={wasa.is_active ? "Deactivate WASA" : "Activate WASA"} onClick={() => props.onToggleWasa(wasa)}><Settings2 size={15} /></button></td></tr>;
+            return <tr key={wasa.id}><td><strong>{wasa.name}</strong><small>{wasa.code || "No code"}</small></td><td>{assignment ? props.directors.find((item) => item.id === assignment.director_id)?.full_name ?? "Unassigned" : "Unassigned"}</td><td><span className={`badge ${wasa.is_active ? "badge-approved" : "badge-draft"}`}>{wasa.is_active ? "Active" : "Inactive"}</span></td><td><div className="row-actions"><button className="small-action edit" aria-label={`Edit ${wasa.name}`} title="Edit WASA" onClick={() => props.onEditWasa(wasa)}><Pencil size={15} /></button><button className="small-action edit" aria-label={wasa.is_active ? `Deactivate ${wasa.name}` : `Activate ${wasa.name}`} title={wasa.is_active ? "Deactivate WASA" : "Activate WASA"} onClick={() => props.onToggleWasa(wasa)}>{wasa.is_active ? <X size={15} /> : <Check size={15} />}</button><button className="small-action return" aria-label={`Delete ${wasa.name}`} title="Delete WASA" onClick={() => props.onDeleteWasa(wasa)}><Trash2 size={15} /></button></div></td></tr>;
           }) : <EmptyRow colSpan={4} text={props.wasas.length ? "No WASAs match the current filters." : "No WASAs added yet."} />}
         </tbody></table></div>
       </div>
     </div>
-    <div className="info-callout"><Users size={18} /><div><strong>Secure account invitations</strong><span>Director logins are created through the protected Supabase Edge Function; the service-role key is never sent to the browser.</span></div></div>
+    <div className="info-callout"><Users size={18} /><div><strong>Secure account invitations</strong><span>Director logins are created through the protected Supabase Edge Function; the service-role key is never sent to the browser. Deleting a Director or WASA may be blocked if linked records exist.</span></div></div>
   </>;
 }
-
 function ExportsPage(props: { reports: MonthlyReport[]; directors: Director[]; wasas: Wasa[]; isAdmin: boolean; month: number; year: number; wasaName: (id: string) => string; directorName: (id: string) => string; onError: (message: string) => void }) {
   const [directorFilter, setDirectorFilter] = useState("all");
   const [wasaFilter, setWasaFilter] = useState("all");
@@ -2066,12 +2082,14 @@ function DirectorEditor({ onClose, onSave }: { onClose: () => void; onSave: (val
   </Modal>;
 }
 
-function WasaEditor({ onClose, onSave }: {
+function WasaEditor({ wasa, onClose, onSave }: {
+  wasa?: Wasa | null;
   onClose: () => void;
   onSave: (values: Record<string, string>) => Promise<{ ok: boolean; message: string }>;
 }) {
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const isEditing = Boolean(wasa);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const entries = Object.fromEntries(new FormData(event.currentTarget).entries());
@@ -2086,16 +2104,16 @@ function WasaEditor({ onClose, onSave }: {
       setBusy(false);
     }
   };
-  return <Modal title="Add a WASA" description="Create an organization record, then assign it to a Director." onClose={onClose}>
+  return <Modal title={isEditing ? "Edit WASA" : "Add a WASA"} description={isEditing ? "Update the district/WASA name, code, or status." : "Create an organization record, then assign it to a Director."} onClose={onClose}>
     <form className="form-body" onSubmit={(event) => void submit(event)}>
-      <Field label="WASA name" required><input name="name" required placeholder="Enter official WASA name" /></Field>
-      <Field label="WASA code (optional)"><input name="code" placeholder="Unique short code" /></Field>
+      <Field label="WASA name" required><input name="name" required placeholder="Enter official WASA name" defaultValue={wasa?.name ?? ""} /></Field>
+      <Field label="WASA code (optional)"><input name="code" placeholder="Unique short code" defaultValue={wasa?.code ?? ""} /></Field>
+      {isEditing && <label className="checkbox-row"><input type="checkbox" name="is_active" defaultChecked={wasa?.is_active ?? true} /> Active</label>}
       {saveError && <div className="form-note target-save-note is-error" role="alert"><AlertCircle size={15} /><span>{saveError}</span></div>}
-      <div className="modal-actions"><button type="button" className="secondary-btn" disabled={busy} onClick={onClose}>Cancel</button><button className="primary-btn" disabled={busy}>{busy ? "Saving…" : "Add WASA"}</button></div>
+      <div className="modal-actions"><button type="button" className="secondary-btn" disabled={busy} onClick={onClose}>Cancel</button><button className="primary-btn" disabled={busy}>{busy ? "Saving…" : isEditing ? "Save changes" : "Add WASA"}</button></div>
     </form>
   </Modal>;
 }
-
 function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return <label className="form-field">{label}{required && <i> *</i>}{children}</label>;
 }
