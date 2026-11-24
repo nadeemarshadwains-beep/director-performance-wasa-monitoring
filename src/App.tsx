@@ -288,6 +288,7 @@ function App() {
     setWasaFilter("all");
   };
   const [search, setSearch] = useState("");
+  const [reportStatusFilter, setReportStatusFilter] = useState("all");
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
   const [reportEditor, setReportEditor] = useState<MonthlyReport | "new" | null>(null);
@@ -962,6 +963,7 @@ function App() {
     && report.report_month === month
     && (directorFilter === "all" || report.director_id === directorFilter)
     && (wasaFilter === "all" || report.wasa_id === wasaFilter)
+    && (reportStatusFilter === "all" || report.status === reportStatusFilter)
     && `${wasaName(report.wasa_id)} ${directorName(report.director_id)} ${report.status}`
       .toLowerCase().includes(search.toLowerCase()),
   );
@@ -978,25 +980,25 @@ function App() {
     <div className="app-shell">
       <aside className={`sidebar ${showMobileMenu ? "sidebar-open" : ""}`}>
         <div className="brand">
-          <div className="brand-mark"><Droplets size={23} /></div>
+          <div className="brand-mark"><Droplets size={26} /></div>
           <div><strong>WASA MONITOR</strong><span>DIRECTOR PERFORMANCE</span></div>
-          <button className="icon-btn mobile-close" onClick={() => setShowMobileMenu(false)} aria-label="Close menu"><X size={18} /></button>
+          <button className="icon-btn mobile-close" onClick={() => setShowMobileMenu(false)} aria-label="Close menu"><X size={20} /></button>
         </div>
         <div className="workspace-label">WORKSPACE</div>
         <nav className="side-nav">
           {nav.map(({ id, label, icon: Icon }) => (
             <button key={id} className={page === id ? "nav-item active" : "nav-item"} onClick={() => { setPage(id); setShowMobileMenu(false); }}>
-              <Icon size={18} strokeWidth={1.8} /><span>{label}</span>
+              <Icon size={20} strokeWidth={1.9} /><span>{label}</span>
               {id === "monthly" && pendingCount > 0 && <small className="nav-count">{pendingCount}</small>}
             </button>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="security-note"><ShieldCheck size={17} /><span>Secure, role-based access</span></div>
+          <div className="security-note"><ShieldCheck size={20} /><span>Secure, role-based access</span></div>
           <button className="user-card" onClick={signOut}>
             <div className="avatar">{profile.full_name.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</div>
             <div className="user-meta"><strong>{profile.full_name}</strong><span>{isAdmin ? "Administrator" : "Director"}</span></div>
-            <LogOut size={17} />
+            <LogOut size={20} />
           </button>
         </div>
       </aside>
@@ -1004,26 +1006,26 @@ function App() {
       <main className="main-shell">
         <header className="topbar">
           <div className="topbar-left">
-            <button className="icon-btn mobile-menu" onClick={() => setShowMobileMenu(true)} aria-label="Open menu"><Menu size={21} /></button>
+            <button className="icon-btn mobile-menu" onClick={() => setShowMobileMenu(true)} aria-label="Open menu"><Menu size={24} /></button>
             <div className="breadcrumb">Performance <span>/</span> <b>{nav.find((item) => item.id === page)?.label}</b></div>
           </div>
           <div className="topbar-right">
-            <div className="period-label"><CalendarDays size={15} /> Reporting period</div>
+            <div className="period-label"><CalendarDays size={18} /> Reporting period</div>
             <select aria-label="Reporting month" value={month} onChange={(event) => setMonth(Number(event.target.value))}>
               {monthNames.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}
             </select>
             <select aria-label="Reporting year" value={year} onChange={(event) => setYear(Number(event.target.value))}>
               {Array.from({ length: 10 }, (_, index) => new Date().getFullYear() - index).map((value) => <option key={value}>{value}</option>)}
             </select>
-            <button className="icon-btn notification-btn" aria-label="Notifications"><Bell size={18} /><i /></button>
-            <button className="icon-btn refresh-btn" onClick={() => void loadData()} aria-label="Refresh data"><RefreshCw size={17} /></button>
+            <button className="icon-btn notification-btn" aria-label="Notifications"><Bell size={20} /><i /></button>
+            <button className="icon-btn refresh-btn" onClick={() => void loadData()} aria-label="Refresh data"><RefreshCw size={20} /></button>
           </div>
         </header>
 
         <div className="page-content">
-          {error && <div className="alert error-alert"><AlertCircle size={18} /><span>{error}</span><button onClick={() => setError("")} aria-label="Dismiss error"><X size={16} /></button></div>}
-          {notice && <div className="alert success-alert"><Check size={18} /><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss message"><X size={16} /></button></div>}
-          {dataLoading && <div className="refresh-indicator"><span className="spinner small" /> Syncing latest database records</div>}
+          {error && <div className="alert error-alert"><AlertCircle size={20} /><span>{error}</span><button onClick={() => setError("")} aria-label="Dismiss error"><X size={18} /></button></div>}
+          {notice && <div className="alert success-alert"><Check size={20} /><span>{notice}</span><button onClick={() => setNotice("")} aria-label="Dismiss message"><X size={18} /></button></div>}
+          {dataLoading && <div className="refresh-indicator"><span className="spinner small" /> Syncing latest database records…</div>}
           {page === "overview" && (
             <OverviewPage
               profile={profile}
@@ -1065,6 +1067,8 @@ function App() {
               pendingCount={pendingCount}
               search={search}
               setSearch={setSearch}
+              statusFilter={reportStatusFilter}
+              setStatusFilter={setReportStatusFilter}
               selectedDirector={directorFilter}
               selectedWasa={wasaFilter}
               setDirector={changeDirectorFilter}
@@ -1130,13 +1134,14 @@ function App() {
           {page === "exports" && (
             <ExportsPage
               reports={data.reports}
+              directors={isAdmin ? data.directors : availableDirectors}
+              wasas={isAdmin ? data.wasas : availableWasas}
               isAdmin={isAdmin}
               month={month}
               year={year}
               wasaName={wasaName}
               directorName={directorName}
-              onExportExcel={() => { void downloadExcel(data.reports.filter((r) => r.report_year === year && r.report_month === month), wasaName, directorName).catch((exportError: unknown) => setError(`Excel export failed: ${messageFor(exportError)}`)); }}
-              onExportPdf={() => { void downloadPdf(data.reports.filter((r) => r.report_year === year && r.report_month === month), wasaName, directorName).catch((exportError: unknown) => setError(`PDF export failed: ${messageFor(exportError)}`)); }}
+              onError={(msg) => setError(msg)}
             />
           )}
         </div>
@@ -1368,14 +1373,14 @@ function OverviewPage(props: {
         eyebrow={props.isAdmin ? "EXECUTIVE OVERVIEW" : "PERSONAL OVERVIEW"}
         title={`Good ${new Date().getHours() < 12 ? "morning" : "afternoon"}, ${props.profile.full_name.split(" ")[0]}`}
         description={`Performance snapshot for ${monthLabel}. Figures reflect submitted records only.`}
-        actions={<><button className="secondary-btn" onClick={props.onNewVisit}><MapPinned size={16} /> Log field visit</button><button className="primary-btn" onClick={props.onNewReport}><Plus size={17} /> New monthly report</button></>}
+        actions={<><button className="secondary-btn" onClick={props.onNewVisit}><MapPinned size={18} /> Log field visit</button><button className="primary-btn" onClick={props.onNewReport}><Plus size={19} /> New monthly report</button></>}
       />
       <div className="filters-bar">
-        <div className="filters-intro"><span className="filter-icon"><Settings2 size={16} /></span><div><strong>Dashboard filters</strong><small>{selectedWasa?.name ?? selectedDirector?.full_name ?? "Showing all performance"}</small></div></div>
+        <div className="filters-intro"><span className="filter-icon"><Settings2 size={19} /></span><div><strong>Dashboard filters</strong><small>{selectedWasa?.name ?? selectedDirector?.full_name ?? "Showing all performance"}</small></div></div>
         <label>Director<select value={props.selectedDirector} onChange={(event) => props.setDirector(event.target.value)}><option value="all">{props.isAdmin ? "All Directors" : "My performance"}</option>{props.directors.map((director) => <option key={director.id} value={director.id}>{director.full_name}</option>)}</select></label>
         <label>WASA<select value={props.selectedWasa} onChange={(event) => props.setWasa(event.target.value)}><option value="all">{selectedDirector || !props.isAdmin ? "All assigned WASAs" : "All WASAs"}</option>{visibleWasas.map((wasa) => <option key={wasa.id} value={wasa.id}>{wasa.name}</option>)}</select></label>
         {hasDashboardFilter && <button className="secondary-btn compact-btn" onClick={() => { props.setDirector("all"); props.setWasa("all"); }}>Clear filters</button>}
-        <div className="filter-period"><CalendarDays size={15} />{monthLabel}</div>
+        <div className="filter-period"><CalendarDays size={18} />{monthLabel}</div>
       </div>
       <div className="kpi-grid">
         {props.isAdmin && !hasDashboardFilter && <>
@@ -1436,8 +1441,8 @@ function KpiCard({ label, value, sub, icon, tone, compact = false }: { label: st
 
 function ReportsPage(props: {
   isAdmin: boolean; month: number; year: number; reports: MonthlyReport[]; wasas: Wasa[]; directors: Director[];
-  pendingCount: number; search: string; setSearch: (value: string) => void; wasaName: (id: string) => string;
-  selectedDirector: string; selectedWasa: string; setDirector: (value: string) => void; setWasa: (value: string) => void;
+  pendingCount: number; search: string; setSearch: (value: string) => void; statusFilter: string; setStatusFilter: (value: string) => void;
+  wasaName: (id: string) => string; selectedDirector: string; selectedWasa: string; setDirector: (value: string) => void; setWasa: (value: string) => void;
   directorName: (id: string) => string; onNew: () => void; onEdit: (report: MonthlyReport) => void;
   onDecide: (report: MonthlyReport, status: "approved" | "returned") => void;
   onExportExcel: () => void; onExportPdf: () => void;
@@ -1451,7 +1456,7 @@ function ReportsPage(props: {
       <div><span>Expected reports pending</span><strong className={props.pendingCount ? "text-orange" : ""}>{props.pendingCount}</strong></div>
     </div>
     <div className="panel data-panel">
-      <div className="table-toolbar"><div><h3>Monthly submissions</h3><p>Current period · {props.reports.length} records</p></div><div className="toolbar-actions"><select className="toolbar-select" aria-label="Filter by Director" value={props.selectedDirector} onChange={(event) => props.setDirector(event.target.value)}><option value="all">{props.isAdmin ? "All Directors" : "My reports"}</option>{props.directors.map((director) => <option key={director.id} value={director.id}>{director.full_name}</option>)}</select><select className="toolbar-select" aria-label="Filter by WASA" value={props.selectedWasa} onChange={(event) => props.setWasa(event.target.value)}><option value="all">All WASAs</option>{props.wasas.map((wasa) => <option key={wasa.id} value={wasa.id}>{wasa.name}</option>)}</select><label className="search-field"><Search size={16} /><input placeholder="Search…" value={props.search} onChange={(event) => props.setSearch(event.target.value)} /></label><button className="icon-btn export-icon" title="Export PDF" onClick={props.onExportPdf}><ArrowDownToLine size={17} /></button></div></div>
+            <div className="table-toolbar"><div><h3>Monthly submissions</h3><p>Current period · {props.reports.length} record{props.reports.length === 1 ? "" : "s"}</p></div><div className="toolbar-actions"><select className="toolbar-select" aria-label="Filter by Director" value={props.selectedDirector} onChange={(event) => props.setDirector(event.target.value)}><option value="all">{props.isAdmin ? "All Directors" : "My reports"}</option>{props.directors.map((director) => <option key={director.id} value={director.id}>{director.full_name}</option>)}</select><select className="toolbar-select" aria-label="Filter by WASA" value={props.selectedWasa} onChange={(event) => props.setWasa(event.target.value)}><option value="all">All WASAs</option>{props.wasas.map((wasa) => <option key={wasa.id} value={wasa.id}>{wasa.name}</option>)}</select><select className="toolbar-select" aria-label="Filter by status" value={props.statusFilter} onChange={(event) => props.setStatusFilter(event.target.value)}><option value="all">All statuses</option><option value="draft">Draft</option><option value="submitted">In review</option><option value="approved">Approved</option><option value="returned">Returned</option></select><label className="search-field"><Search size={16} /><input placeholder="Search…" value={props.search} onChange={(event) => props.setSearch(event.target.value)} /></label><button className="icon-btn export-icon" title="Export PDF" onClick={props.onExportPdf}><ArrowDownToLine size={17} /></button></div></div>
       <div className="table-wrap"><table><thead><tr><th>WASA / DIRECTOR</th><th>DEMAND</th><th>COLLECTION</th><th>RECOVERY</th><th>ARREARS RECOVERED</th><th>CLOSING ARREARS</th><th>STATUS</th><th>ACTION</th></tr></thead>
         <tbody>{props.reports.length ? props.reports.map((report) => <tr key={report.id}>
           <td><strong>{props.wasaName(report.wasa_id)}</strong><small>{props.directorName(report.director_id)}</small></td>
@@ -1467,7 +1472,7 @@ function ReportsPage(props: {
             {report.review_comment && <span className="review-note" title={report.review_comment}><AlertCircle size={14} /></span>}
             {report.status === "approved" && <LockKeyhole size={14} className="locked-icon" />}
           </div></td>
-        </tr>) : <EmptyRow colSpan={8} text="No monthly reports match this period and search." />}</tbody>
+        </tr>) : <EmptyRow colSpan={8} text="No monthly reports match this period and filters." />}</tbody>
       </table></div>
       <div className="panel-footer"><span>Current demand collection and arrears recovery are shown separately.</span><span>{props.wasas.length} assigned WASAs available</span></div>
     </div>
@@ -1626,6 +1631,9 @@ function TeamPage(props: {
   const [assignmentDirector, setAssignmentDirector] = useState("");
   const [assignmentBusy, setAssignmentBusy] = useState(false);
   const [assignmentError, setAssignmentError] = useState("");
+  const [directorQuery, setDirectorQuery] = useState("");
+  const [wasaQuery, setWasaQuery] = useState("");
+  const [wasaAssignmentFilter, setWasaAssignmentFilter] = useState<"all" | "assigned" | "unassigned">("all");
   const openAssignments = (wasaId: string) => props.assignments.find((item) => item.wasa_id === wasaId && !item.valid_to);
   const startAssignment = (directorId = "") => {
     setAssignmentDirector(directorId);
@@ -1650,22 +1658,39 @@ function TeamPage(props: {
       setAssignmentBusy(false);
     }
   };
+  const directorNeedle = directorQuery.trim().toLowerCase();
+  const visibleDirectors = props.directors.filter((director) => {
+    const assignedDistricts = props.assignments
+      .filter((item) => item.director_id === director.id)
+      .map((item) => props.wasas.find((wasa) => wasa.id === item.wasa_id)?.name)
+      .filter(Boolean)
+      .join(" ");
+    return !directorNeedle || `${director.full_name} ${director.email} ${assignedDistricts}`.toLowerCase().includes(directorNeedle);
+  });
+  const wasaNeedle = wasaQuery.trim().toLowerCase();
+  const visibleWasas = props.wasas.filter((wasa) => {
+    const assignment = openAssignments(wasa.id);
+    const assignedName = assignment ? (props.directors.find((item) => item.id === assignment.director_id)?.full_name ?? "Unassigned") : "Unassigned";
+    const matchesQuery = !wasaNeedle || `${wasa.name} ${wasa.code ?? ""} ${assignedName}`.toLowerCase().includes(wasaNeedle);
+    const matchesAssignment = wasaAssignmentFilter === "all" || (wasaAssignmentFilter === "assigned" ? Boolean(assignment) : !assignment);
+    return matchesQuery && matchesAssignment;
+  });
   return <>
     <PageHeading eyebrow="ADMINISTRATION" title="Directors & WASAs" description="Invite Directors and assign each one to the districts (WASAs) they manage." actions={<><button className="secondary-btn" onClick={props.onNewWasa}><Plus size={16} /> Add WASA</button><button className="primary-btn" onClick={props.onNewDirector}><Users size={16} /> Invite Director</button></>} />
     <div className="stats-strip"><div><span>Active Directors</span><strong>{props.directors.filter((item) => item.is_active).length}</strong></div><div><span>Active WASAs</span><strong>{props.wasas.filter((item) => item.is_active).length}</strong></div><div><span>Current assignments</span><strong>{props.assignments.length}</strong></div><div><span>Unassigned WASAs</span><strong>{props.wasas.filter((item) => item.is_active && !openAssignments(item.id)).length}</strong></div></div>
     <div className="team-grid">
-      <div className="panel data-panel"><div className="table-toolbar"><div><h3>Director accounts</h3><p>Invitation, activation and district assignment management</p></div></div>
+      <div className="panel data-panel"><div className="table-toolbar"><div><h3>Director accounts</h3><p>{visibleDirectors.length} of {props.directors.length} Directors shown</p></div><div className="toolbar-actions"><label className="search-field"><Search size={16} /><input placeholder="Search Directors…" value={directorQuery} onChange={(event) => setDirectorQuery(event.target.value)} /></label></div></div>
         <div className="table-wrap"><table><thead><tr><th>DIRECTOR</th><th>EMAIL</th><th>ASSIGNED DISTRICTS</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>
-          {props.directors.length ? props.directors.map((director) => {
+          {visibleDirectors.length ? visibleDirectors.map((director) => {
             const assignedDistricts = props.assignments
               .filter((item) => item.director_id === director.id)
               .map((item) => props.wasas.find((wasa) => wasa.id === item.wasa_id)?.name)
               .filter((name): name is string => Boolean(name));
             return <tr key={director.id}><td>{editing === director.id ? <input className="inline-input" value={editName} onChange={(event) => setEditName(event.target.value)} /> : <strong>{director.full_name}</strong>}</td><td>{director.email}</td><td>{assignedDistricts.length ? assignedDistricts.join(", ") : "Not assigned"}</td><td><span className={`badge ${director.is_active ? "badge-approved" : "badge-draft"}`}>{director.is_active ? "Active" : "Inactive"}</span></td><td><div className="row-actions">{editing === director.id ? <><button className="small-action approve" aria-label={`Save ${director.full_name}`} onClick={() => { props.onUpdateDirector(director, editName, director.is_active); setEditing(null); }}><Check size={15} /></button><button className="small-action return" aria-label="Cancel name edit" onClick={() => setEditing(null)}><X size={15} /></button></> : <><button className="small-action edit" aria-label={`Assign district to ${director.full_name}`} title="Assign district" onClick={() => startAssignment(director.id)}><MapPinned size={15} /></button><button className="small-action edit" aria-label={`Edit ${director.full_name}`} title="Edit Director name" onClick={() => { setEditing(director.id); setEditName(director.full_name); }}><Settings2 size={15} /></button></>}</div></td></tr>;
-          }) : <EmptyRow colSpan={5} text="No Directors added yet." />}
+          }) : <EmptyRow colSpan={5} text={props.directors.length ? "No Directors match the current search." : "No Directors added yet."} />}
         </tbody></table></div>
       </div>
-      <div className="panel data-panel"><div className="table-toolbar"><div><h3>District / WASA directory</h3><p>Assign a district to a Director or maintain its status</p></div><button className="secondary-btn compact-btn" onClick={() => assignmentForm ? setAssignmentForm(false) : startAssignment()}><MapPinned size={15} /> Assign district</button></div>
+      <div className="panel data-panel"><div className="table-toolbar"><div><h3>District / WASA directory</h3><p>{visibleWasas.length} of {props.wasas.length} districts shown</p></div><div className="toolbar-actions"><select className="toolbar-select" aria-label="Filter WASAs by assignment" value={wasaAssignmentFilter} onChange={(event) => setWasaAssignmentFilter(event.target.value as "all" | "assigned" | "unassigned")}><option value="all">All districts</option><option value="assigned">Assigned</option><option value="unassigned">Unassigned</option></select><label className="search-field"><Search size={16} /><input placeholder="Search WASAs…" value={wasaQuery} onChange={(event) => setWasaQuery(event.target.value)} /></label><button className="secondary-btn compact-btn" onClick={() => assignmentForm ? setAssignmentForm(false) : startAssignment()}><MapPinned size={15} /> Assign district</button></div></div>
         {assignmentForm && <form className="inline-assignment-form" onSubmit={(event) => void submitAssign(event)}>
           <label>Director<select name="director_id" required value={assignmentDirector} onChange={(event) => setAssignmentDirector(event.target.value)}><option value="" disabled>Select Director</option>{props.directors.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.full_name}</option>)}</select></label>
           <label>District / WASA<select name="wasa_id" required defaultValue=""><option value="" disabled>Select district / WASA</option>{props.wasas.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -1673,10 +1698,10 @@ function TeamPage(props: {
           {assignmentError && <div className="form-note target-save-note is-error" role="alert"><AlertCircle size={15} /><span>{assignmentError}</span></div>}
         </form>}
         <div className="table-wrap"><table><thead><tr><th>DISTRICT / WASA</th><th>ASSIGNED DIRECTOR</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
-          {props.wasas.length ? props.wasas.map((wasa) => {
+          {visibleWasas.length ? visibleWasas.map((wasa) => {
             const assignment = openAssignments(wasa.id);
             return <tr key={wasa.id}><td><strong>{wasa.name}</strong><small>{wasa.code || "No code"}</small></td><td>{assignment ? props.directors.find((item) => item.id === assignment.director_id)?.full_name ?? "Unassigned" : "Unassigned"}</td><td><span className={`badge ${wasa.is_active ? "badge-approved" : "badge-draft"}`}>{wasa.is_active ? "Active" : "Inactive"}</span></td><td><button className="small-action edit" title={wasa.is_active ? "Deactivate WASA" : "Activate WASA"} onClick={() => props.onToggleWasa(wasa)}><Settings2 size={15} /></button></td></tr>;
-          }) : <EmptyRow colSpan={4} text="No WASAs added yet." />}
+          }) : <EmptyRow colSpan={4} text={props.wasas.length ? "No WASAs match the current filters." : "No WASAs added yet."} />}
         </tbody></table></div>
       </div>
     </div>
@@ -1684,22 +1709,36 @@ function TeamPage(props: {
   </>;
 }
 
-function ExportsPage(props: { reports: MonthlyReport[]; isAdmin: boolean; month: number; year: number; wasaName: (id: string) => string; directorName: (id: string) => string; onExportExcel: () => void; onExportPdf: () => void }) {
-  const rows = props.reports.filter((report) => report.report_year === props.year && report.report_month === props.month);
+function ExportsPage(props: { reports: MonthlyReport[]; directors: Director[]; wasas: Wasa[]; isAdmin: boolean; month: number; year: number; wasaName: (id: string) => string; directorName: (id: string) => string; onError: (message: string) => void }) {
+  const [directorFilter, setDirectorFilter] = useState("all");
+  const [wasaFilter, setWasaFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const periodRows = props.reports.filter((report) => report.report_year === props.year && report.report_month === props.month);
+  const filteredRows = periodRows.filter((report) =>
+    (directorFilter === "all" || report.director_id === directorFilter)
+    && (wasaFilter === "all" || report.wasa_id === wasaFilter)
+    && (statusFilter === "all" || report.status === statusFilter)
+    && `${props.wasaName(report.wasa_id)} ${props.directorName(report.director_id)} ${report.status}`
+      .toLowerCase().includes(search.toLowerCase()),
+  );
+  const exportExcel = () => { void downloadExcel(filteredRows, props.wasaName, props.directorName).catch((exportError: unknown) => props.onError(`Excel export failed: ${messageFor(exportError)}`)); };
+  const exportPdf = () => { void downloadPdf(filteredRows, props.wasaName, props.directorName).catch((exportError: unknown) => props.onError(`PDF export failed: ${messageFor(exportError)}`)); };
+  const resetFilters = () => { setDirectorFilter("all"); setWasaFilter("all"); setStatusFilter("all"); setSearch(""); };
+  const hasActiveFilters = directorFilter !== "all" || wasaFilter !== "all" || statusFilter !== "all" || search.trim().length > 0;
   return <>
-    <PageHeading eyebrow="REPORTING & DATA" title={props.isAdmin ? "Consolidated reports" : "My report history"} description={`Export submitted monthly WASA reports for ${monthNames[props.month - 1]} ${props.year}.`} />
+    <PageHeading eyebrow="REPORTING & DATA" title={props.isAdmin ? "Consolidated reports" : "My report history"} description={`Export and review monthly WASA reports for ${monthNames[props.month - 1]} ${props.year}.`} actions={hasActiveFilters ? <button className="ghost-btn" onClick={resetFilters}><RefreshCw size={16} /> Clear filters</button> : undefined} />
     <div className="export-cards">
-      <div className="panel export-card"><div className="export-icon-box excel"><FileSpreadsheet size={22} /></div><div><h3>Excel workbook</h3><p>Download report records with financial, arrears, survey and connection details.</p></div><button className="secondary-btn" onClick={props.onExportExcel}><ArrowDownToLine size={16} /> Download .xlsx</button></div>
-      <div className="panel export-card"><div className="export-icon-box pdf"><FileBarChart2 size={22} /></div><div><h3>PDF summary</h3><p>Generate a printable summary of report submissions and recovery results.</p></div><button className="secondary-btn" onClick={props.onExportPdf}><ArrowDownToLine size={16} /> Download .pdf</button></div>
+      <div className="panel export-card"><div className="export-icon-box excel"><FileSpreadsheet size={22} /></div><div><h3>Excel workbook</h3><p>Download currently filtered report records with financial, arrears, survey and connection details.</p></div><button className="secondary-btn" onClick={exportExcel}><ArrowDownToLine size={16} /> Download .xlsx</button></div>
+      <div className="panel export-card"><div className="export-icon-box pdf"><FileBarChart2 size={22} /></div><div><h3>PDF summary</h3><p>Generate a printable summary of the currently filtered report submissions and recovery results.</p></div><button className="secondary-btn" onClick={exportPdf}><ArrowDownToLine size={16} /> Download .pdf</button></div>
     </div>
-    <div className="panel data-panel"><div className="table-toolbar"><div><h3>Consolidated WASA reports</h3><p>{rows.length} available records for current period</p></div><span className="period-chip"><CalendarDays size={14} />{monthNames[props.month - 1]} {props.year}</span></div>
+    <div className="panel data-panel"><div className="table-toolbar"><div><h3>Consolidated WASA reports</h3><p>{filteredRows.length} of {periodRows.length} records for this period</p></div><div className="toolbar-actions"><select className="toolbar-select" aria-label="Filter exports by Director" value={directorFilter} onChange={(event) => setDirectorFilter(event.target.value)}><option value="all">All Directors</option>{props.directors.map((director) => <option key={director.id} value={director.id}>{director.full_name}</option>)}</select><select className="toolbar-select" aria-label="Filter exports by WASA" value={wasaFilter} onChange={(event) => setWasaFilter(event.target.value)}><option value="all">All WASAs</option>{props.wasas.map((wasa) => <option key={wasa.id} value={wasa.id}>{wasa.name}</option>)}</select><select className="toolbar-select" aria-label="Filter exports by status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">All statuses</option><option value="draft">Draft</option><option value="submitted">In review</option><option value="approved">Approved</option><option value="returned">Returned</option></select><label className="search-field"><Search size={16} /><input placeholder="Search…" value={search} onChange={(event) => setSearch(event.target.value)} /></label><span className="period-chip"><CalendarDays size={14} />{monthNames[props.month - 1]} {props.year}</span></div></div>
       <div className="table-wrap"><table><thead><tr><th>WASA</th><th>DIRECTOR</th><th>DEMAND</th><th>COLLECTION</th><th>RECOVERY</th><th>ARREARS RECOVERED</th><th>STATUS</th></tr></thead><tbody>
-        {rows.length ? rows.map((report) => <tr key={report.id}><td><strong>{props.wasaName(report.wasa_id)}</strong></td><td>{props.directorName(report.director_id)}</td><td>{money(report.monthly_demand)}</td><td>{money(report.monthly_collection)}</td><td>{report.recovery_percentage == null ? "—" : `${report.recovery_percentage}%`}</td><td>{money(report.arrears_recovered)}</td><td><StatusBadge status={report.status} /></td></tr>) : <EmptyRow colSpan={7} text="No records are available for this period." />}
+        {filteredRows.length ? filteredRows.map((report) => <tr key={report.id}><td><strong>{props.wasaName(report.wasa_id)}</strong></td><td>{props.directorName(report.director_id)}</td><td>{money(report.monthly_demand)}</td><td>{money(report.monthly_collection)}</td><td>{report.recovery_percentage == null ? "—" : `${report.recovery_percentage}%`}</td><td>{money(report.arrears_recovered)}</td><td><StatusBadge status={report.status} /></td></tr>) : <EmptyRow colSpan={7} text={periodRows.length ? "No records match the current filters." : "No records are available for this period."} />}
       </tbody></table></div></div>
     <div className="info-callout"><AlertCircle size={18} /><div><strong>Import planning</strong><span>One year of historical Excel data is expected. Review the existing workbook before importing so its columns can be mapped to the approved report fields without silently changing existing records.</span></div></div>
   </>;
 }
-
 function EmptyRow({ colSpan, text }: { colSpan: number; text: string }) {
   return <tr><td colSpan={colSpan}><div className="empty-row"><div className="empty-icon"><FileBarChart2 size={19} /></div><strong>{text}</strong></div></td></tr>;
 }
